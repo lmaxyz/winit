@@ -74,7 +74,7 @@ use crate::{
         DeviceEvent, Event, Force, Ime, InnerSizeWriter, RawKeyEvent, Touch, TouchPhase,
         WindowEvent,
     },
-    event_loop::{ControlFlow, DeviceEvents, EventLoopClosed, EventLoopWindowTarget as RootELW},
+    event_loop::{ActiveEventLoop as RootELW, ControlFlow, DeviceEvents, EventLoopClosed},
     keyboard::ModifiersState,
     platform::pump_events::PumpStatus,
     platform_impl::platform::{
@@ -176,7 +176,7 @@ impl Default for PlatformSpecificEventLoopAttributes {
     }
 }
 
-pub struct EventLoopWindowTarget {
+pub struct ActiveEventLoop {
     thread_id: u32,
     thread_msg_target: HWND,
     pub(crate) runner_shared: EventLoopRunnerShared<UserEventPlaceholder>,
@@ -216,7 +216,7 @@ impl<T: 'static> EventLoop<T> {
             user_event_sender,
             user_event_receiver,
             window_target: RootELW {
-                p: EventLoopWindowTarget {
+                p: ActiveEventLoop {
                     thread_id,
                     thread_msg_target,
                     runner_shared,
@@ -522,7 +522,7 @@ impl<T: 'static> EventLoop<T> {
     }
 }
 
-impl EventLoopWindowTarget {
+impl ActiveEventLoop {
     #[inline(always)]
     pub(crate) fn create_thread_executor(&self) -> EventLoopThreadExecutor {
         EventLoopThreadExecutor {

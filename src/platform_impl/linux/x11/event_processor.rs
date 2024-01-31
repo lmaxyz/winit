@@ -24,7 +24,7 @@ use super::{
 use crate::{
     dpi::{PhysicalPosition, PhysicalSize},
     event::{DeviceEvent, ElementState, Event, Ime, RawKeyEvent, TouchPhase, WindowEvent},
-    event_loop::EventLoopWindowTarget as RootELW,
+    event_loop::ActiveEventLoop as RootELW,
     keyboard::ModifiersState,
     platform_impl::platform::common::{keymap, xkb_state::KbdState},
 };
@@ -1401,7 +1401,7 @@ impl EventProcessor {
     }
 
     fn handle_pressed_keys<T: 'static, F>(
-        wt: &super::EventLoopWindowTarget,
+        wt: &super::ActiveEventLoop,
         window_id: crate::window::WindowId,
         state: ElementState,
         kb_state: &mut KbdState,

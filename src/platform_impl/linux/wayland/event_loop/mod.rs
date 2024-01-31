@@ -19,12 +19,10 @@ use sctk::reexports::client::{Connection, QueueHandle};
 use crate::dpi::LogicalSize;
 use crate::error::{EventLoopError, OsError as RootOsError};
 use crate::event::{Event, InnerSizeWriter, StartCause, WindowEvent};
-use crate::event_loop::{
-    ControlFlow, DeviceEvents, EventLoopWindowTarget as RootEventLoopWindowTarget,
-};
+use crate::event_loop::{ActiveEventLoop as RootActiveEventLoop, ControlFlow, DeviceEvents};
 use crate::platform::pump_events::PumpStatus;
 use crate::platform_impl::platform::min_timeout;
-use crate::platform_impl::{EventLoopWindowTarget as PlatformEventLoopWindowTarget, OsError};
+use crate::platform_impl::{ActiveEventLoop as PlatformActiveEventLoop, OsError};
 
 mod proxy;
 pub mod sink;
@@ -63,7 +61,7 @@ pub struct EventLoop<T: 'static> {
     connection: Connection,
 
     /// Event loop window target.
-    window_target: RootEventLoopWindowTarget,
+    window_target: RootActiveEventLoop,
 
     // XXX drop after everything else, just to be safe.
     /// Calloop's event loop.
@@ -159,7 +157,7 @@ impl<T: 'static> EventLoop<T> {
             .map_err(|error| error.error);
         map_err!(result, WaylandError::Calloop)?;
 
-        let window_target = EventLoopWindowTarget {
+        let window_target = ActiveEventLoop {
             connection: connection.clone(),
             wayland_dispatcher: wayland_dispatcher.clone(),
             event_loop_awakener,
@@ -179,8 +177,8 @@ impl<T: 'static> EventLoop<T> {
             user_events_sender,
             pending_user_events,
             event_loop,
-            window_target: RootEventLoopWindowTarget {
-                p: PlatformEventLoopWindowTarget::Wayland(window_target),
+            window_target: RootActiveEventLoop {
+                p: PlatformActiveEventLoop::Wayland(window_target),
                 _marker: PhantomData,
             },
         };
@@ -190,7 +188,7 @@ impl<T: 'static> EventLoop<T> {
 
     pub fn run_on_demand<F>(&mut self, mut event_handler: F) -> Result<(), EventLoopError>
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget),
+        F: FnMut(Event<T>, &RootActiveEventLoop),
     {
         let exit = loop {
             match self.pump_events(None, &mut event_handler) {
@@ -217,7 +215,7 @@ impl<T: 'static> EventLoop<T> {
 
     pub fn pump_events<F>(&mut self, timeout: Option<Duration>, mut callback: F) -> PumpStatus
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget),
+        F: FnMut(Event<T>, &RootActiveEventLoop),
     {
         if !self.loop_running {
             self.loop_running = true;
@@ -244,7 +242,7 @@ impl<T: 'static> EventLoop<T> {
 
     pub fn poll_events_with_timeout<F>(&mut self, mut timeout: Option<Duration>, mut callback: F)
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget),
+        F: FnMut(Event<T>, &RootActiveEventLoop),
     {
         let cause = loop {
             let start = Instant::now();
@@ -320,7 +318,7 @@ impl<T: 'static> EventLoop<T> {
 
     fn single_iteration<F>(&mut self, callback: &mut F, cause: StartCause)
     where
-        F: FnMut(Event<T>, &RootEventLoopWindowTarget),
+        F: FnMut(Event<T>, &RootActiveEventLoop),
     {
         // NOTE currently just indented to simplify the diff
 
@@ -525,13 +523,13 @@ impl<T: 'static> EventLoop<T> {
     }
 
     #[inline]
-    pub fn window_target(&self) -> &RootEventLoopWindowTarget {
+    pub fn window_target(&self) -> &RootActiveEventLoop {
         &self.window_target
     }
 
     fn with_state<'a, U: 'a, F: FnOnce(&'a mut WinitState) -> U>(&'a mut self, callback: F) -> U {
         let state = match &mut self.window_target.p {
-            PlatformEventLoopWindowTarget::Wayland(window_target) => window_target.state.get_mut(),
+            PlatformActiveEventLoop::Wayland(window_target) => window_target.state.get_mut(),
             #[cfg(x11_platform)]
             _ => unreachable!(),
         };
@@ -541,7 +539,7 @@ impl<T: 'static> EventLoop<T> {
 
     fn loop_dispatch<D: Into<Option<std::time::Duration>>>(&mut self, timeout: D) -> IOResult<()> {
         let state = match &mut self.window_target.p {
-            PlatformEventLoopWindowTarget::Wayland(window_target) => window_target.state.get_mut(),
+            PlatformActiveEventLoop::Wayland(window_target) => window_target.state.get_mut(),
             #[cfg(feature = "x11")]
             _ => unreachable!(),
         };
@@ -554,7 +552,7 @@ impl<T: 'static> EventLoop<T> {
 
     fn roundtrip(&mut self) -> Result<usize, RootOsError> {
         let state = match &mut self.window_target.p {
-            PlatformEventLoopWindowTarget::Wayland(window_target) => window_target.state.get_mut(),
+            PlatformActiveEventLoop::Wayland(window_target) => window_target.state.get_mut(),
             #[cfg(feature = "x11")]
             _ => unreachable!(),
         };
@@ -597,7 +595,7 @@ impl<T> AsRawFd for EventLoop<T> {
     }
 }
 
-pub struct EventLoopWindowTarget {
+pub struct ActiveEventLoop {
     /// The event loop wakeup source.
     pub event_loop_awakener: calloop::ping::Ping,
 
@@ -621,7 +619,7 @@ pub struct EventLoopWindowTarget {
     pub connection: Connection,
 }
 
-impl EventLoopWindowTarget {
+impl ActiveEventLoop {
     pub(crate) fn set_control_flow(&self, control_flow: ControlFlow) {
         self.control_flow.set(control_flow)
     }

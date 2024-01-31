@@ -71,7 +71,7 @@ use super::{common::xkb_state::KbdState, ControlFlow, OsError};
 use crate::{
     error::{EventLoopError, OsError as RootOsError},
     event::{Event, StartCause, WindowEvent},
-    event_loop::{DeviceEvents, EventLoopClosed, EventLoopWindowTarget as RootELW},
+    event_loop::{ActiveEventLoop as RootELW, DeviceEvents, EventLoopClosed},
     platform::pump_events::PumpStatus,
     platform_impl::platform::{min_timeout, WindowId},
     window::WindowAttributes,
@@ -142,7 +142,7 @@ impl<T> PeekableReceiver<T> {
     }
 }
 
-pub struct EventLoopWindowTarget {
+pub struct ActiveEventLoop {
     xconn: Arc<XConnection>,
     wm_delete_window: xproto::Atom,
     net_wm_ping: xproto::Atom,
@@ -300,7 +300,7 @@ impl<T: 'static> EventLoop<T> {
         let kb_state =
             KbdState::from_x11_xkb(xconn.xcb_connection().get_raw_xcb_connection()).unwrap();
 
-        let window_target = EventLoopWindowTarget {
+        let window_target = ActiveEventLoop {
             ime,
             root,
             control_flow: Cell::new(ControlFlow::default()),
@@ -325,7 +325,7 @@ impl<T: 'static> EventLoop<T> {
         window_target.update_listen_device_events(true);
 
         let target = Rc::new(RootELW {
-            p: super::EventLoopWindowTarget::X(window_target),
+            p: super::ActiveEventLoop::X(window_target),
             _marker: PhantomData,
         });
 
@@ -667,15 +667,15 @@ impl<T> AsRawFd for EventLoop<T> {
     }
 }
 
-pub(crate) fn get_xtarget(target: &RootELW) -> &EventLoopWindowTarget {
+pub(crate) fn get_xtarget(target: &RootELW) -> &ActiveEventLoop {
     match target.p {
-        super::EventLoopWindowTarget::X(ref target) => target,
+        super::ActiveEventLoop::X(ref target) => target,
         #[cfg(wayland_platform)]
         _ => unreachable!(),
     }
 }
 
-impl EventLoopWindowTarget {
+impl ActiveEventLoop {
     /// Returns the `XConnection` of this events loop.
     #[inline]
     pub(crate) fn x_connection(&self) -> &Arc<XConnection> {
@@ -835,7 +835,7 @@ impl Deref for Window {
 
 impl Window {
     pub(crate) fn new(
-        event_loop: &EventLoopWindowTarget,
+        event_loop: &ActiveEventLoop,
         attribs: WindowAttributes,
     ) -> Result<Self, RootOsError> {
         let window = Arc::new(UnownedWindow::new(event_loop, attribs)?);

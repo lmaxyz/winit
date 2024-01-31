@@ -24,7 +24,7 @@ use crate::{
     dpi::{PhysicalPosition, PhysicalSize, Position, Size},
     error,
     event::{self, Force, InnerSizeWriter, StartCause},
-    event_loop::{self, ControlFlow, DeviceEvents, EventLoopWindowTarget as RootELW},
+    event_loop::{self, ActiveEventLoop as RootELW, ControlFlow, DeviceEvents},
     platform::pump_events::PumpStatus,
     window::{
         self, CursorGrabMode, ImePurpose, ResizeDirection, Theme, WindowButtons, WindowLevel,
@@ -141,7 +141,7 @@ pub struct KeyEventExtra {}
 
 pub struct EventLoop<T: 'static> {
     android_app: AndroidApp,
-    window_target: event_loop::EventLoopWindowTarget,
+    window_target: event_loop::ActiveEventLoop,
     redraw_flag: SharedFlag,
     user_events_sender: mpsc::Sender<T>,
     user_events_receiver: PeekableReceiver<T>, //must wake looper whenever something gets sent
@@ -179,8 +179,8 @@ impl<T: 'static> EventLoop<T> {
 
         Ok(Self {
             android_app: android_app.clone(),
-            window_target: event_loop::EventLoopWindowTarget {
-                p: EventLoopWindowTarget {
+            window_target: event_loop::ActiveEventLoop {
+                p: ActiveEventLoop {
                     app: android_app.clone(),
                     control_flow: Cell::new(ControlFlow::default()),
                     exit: Cell::new(false),
@@ -482,14 +482,14 @@ impl<T: 'static> EventLoop<T> {
 
     pub fn run<F>(mut self, event_handler: F) -> Result<(), EventLoopError>
     where
-        F: FnMut(event::Event<T>, &event_loop::EventLoopWindowTarget),
+        F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop),
     {
         self.run_on_demand(event_handler)
     }
 
     pub fn run_on_demand<F>(&mut self, mut event_handler: F) -> Result<(), EventLoopError>
     where
-        F: FnMut(event::Event<T>, &event_loop::EventLoopWindowTarget),
+        F: FnMut(event::Event<T>, &event_loop::ActiveEventLoop),
     {
         loop {
             match self.pump_events(None, &mut event_handler) {
@@ -617,7 +617,7 @@ impl<T: 'static> EventLoop<T> {
         });
     }
 
-    pub fn window_target(&self) -> &event_loop::EventLoopWindowTarget {
+    pub fn window_target(&self) -> &event_loop::ActiveEventLoop {
         &self.window_target
     }
 
@@ -661,14 +661,14 @@ impl<T> EventLoopProxy<T> {
     }
 }
 
-pub struct EventLoopWindowTarget {
+pub struct ActiveEventLoop {
     app: AndroidApp,
     control_flow: Cell<ControlFlow>,
     exit: Cell<bool>,
     redraw_requester: RedrawRequester,
 }
 
-impl EventLoopWindowTarget {
+impl ActiveEventLoop {
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         Some(MonitorHandle::new(self.app.clone()))
     }
@@ -773,7 +773,7 @@ impl DeviceId {
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct PlatformSpecificWindowBuilderAttributes;
+pub struct PlatformSpecificWindowAttributesAttributes;
 
 pub(crate) struct Window {
     app: AndroidApp,
@@ -782,7 +782,7 @@ pub(crate) struct Window {
 
 impl Window {
     pub(crate) fn new(
-        el: &EventLoopWindowTarget,
+        el: &ActiveEventLoop,
         _window_attrs: window::WindowAttributes,
     ) -> Result<Self, error::OsError> {
         // FIXME this ignores requested window attributes
