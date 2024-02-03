@@ -67,14 +67,14 @@ use self::{
     event_processor::EventProcessor,
     ime::{Ime, ImeCreationError, ImeReceiver, ImeRequest, ImeSender},
 };
-use super::{common::xkb_state::KbdState, ControlFlow, OsError};
+use super::{common::xkb_state::KbdState, ControlFlow, OsError, PlatformCustomCursor};
 use crate::{
     error::{EventLoopError, OsError as RootOsError},
     event::{Event, StartCause, WindowEvent},
     event_loop::{ActiveEventLoop as RootELW, DeviceEvents, EventLoopClosed},
     platform::pump_events::PumpStatus,
     platform_impl::platform::{min_timeout, WindowId},
-    window::WindowAttributes,
+    window::{CustomCursor as RootCustomCursor, CustomCursorSource, WindowAttributes},
 };
 
 // Xinput constants not defined in x11rb
@@ -688,6 +688,12 @@ impl ActiveEventLoop {
 
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         self.xconn.primary_monitor().ok()
+    }
+
+    pub(crate) fn create_custom_cursor(&self, cursor: CustomCursorSource) -> RootCustomCursor {
+        RootCustomCursor {
+            inner: PlatformCustomCursor::X(CustomCursor::new(self, cursor.inner)),
+        }
     }
 
     pub fn listen_device_events(&self, allowed: DeviceEvents) {

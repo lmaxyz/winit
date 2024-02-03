@@ -21,7 +21,7 @@ use crate::{
         Key, KeyCode, KeyLocation, ModifiersKeys, ModifiersState, NativeKey, NativeKeyCode,
         PhysicalKey,
     },
-    window::WindowId as RootWindowId,
+    window::{CustomCursor as RootCustomCursor, CustomCursorSource, WindowId as RootWindowId},
 };
 
 use super::{
@@ -727,6 +727,13 @@ pub struct ActiveEventLoop {
 }
 
 impl ActiveEventLoop {
+    pub fn create_custom_cursor(&self, source: CustomCursorSource) -> RootCustomCursor {
+        let _ = source.inner;
+        RootCustomCursor {
+            inner: super::PlatformCustomCursor,
+        }
+    }
+
     pub fn primary_monitor(&self) -> Option<MonitorHandle> {
         Some(MonitorHandle)
     }
