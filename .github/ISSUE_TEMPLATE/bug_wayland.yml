@@ -1,0 +1,31 @@
+name: Wayland bug
+description: Create a Wayland-specific bug report
+labels:
+  - B - bug
+  - DS - wayland
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Description of the problem you're having
+    validations:
+      required: true
+  - type: checkboxes
+    attributes:
+      label: Window isn't shown unless you draw
+      options:
+        - label: I understand that windows aren't shown on Wayland unless you draw to them.
+          required: true
+  - type: textarea
+    id: winit-version
+    attributes:
+      label: Winit version
+      description: What version of Winit are you using?
+      placeholder: 0.29.10
+    validations:
+      required: true

@@ -1,0 +1,38 @@
+name: Web bug
+description: Create a web-specific bug report
+labels:
+  - B - bug
+  - DS - web
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report!
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Description of the problem you're having
+    validations:
+      required: true
+  - type: dropdown
+    id: browsers
+    attributes:
+      label: Tested browsers
+      description: What browsers are you seeing the problem on?
+      options:
+        - Firefox
+        - Chrome
+        - Safari
+        - Microsoft Edge
+      multiple: true
+    validations:
+      required: true
+  - type: textarea
+    id: winit-version
+    attributes:
+      label: Winit version
+      description: What version of Winit are you using?
+      placeholder: 0.29.10
+    validations:
+      required: true
