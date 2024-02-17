@@ -9,6 +9,7 @@ use sctk::reexports::client::backend::ObjectId;
 use sctk::reexports::client::globals::GlobalList;
 use sctk::reexports::client::protocol::wl_output::WlOutput;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
+
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
 
 use sctk::compositor::{CompositorHandler, CompositorState};
@@ -19,24 +20,28 @@ use sctk::seat::SeatState;
 use sctk::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
 use sctk::shell::xdg::XdgShell;
 use sctk::shell::WaylandSurface;
+use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
+use wayland_client::globals::BindError;
 
 use crate::dpi::LogicalSize;
-use crate::platform_impl::OsError;
-
-use super::event_loop::sink::EventSink;
-use super::output::MonitorHandle;
-use super::seat::{
+use crate::platform_impl::wayland::event_loop::sink::EventSink;
+use crate::platform_impl::wayland::output::MonitorHandle;
+use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, RelativePointerState, TextInputState, WinitPointerData,
     WinitPointerDataExt, WinitSeatState,
 };
-use super::types::kwin_blur::KWinBlurManager;
-use super::types::wp_fractional_scaling::FractionalScalingManager;
-use super::types::wp_viewporter::ViewporterState;
-use super::types::xdg_activation::XdgActivationState;
-use super::window::{WindowRequests, WindowState};
-use super::{WaylandError, WindowId};
+use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
+use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
+use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
+use crate::platform_impl::wayland::types::wl_shell::Shell;
+use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
+use crate::platform_impl::wayland::{WaylandError, WindowId};
+use crate::platform_impl::OsError;
+
+use super::types::wl_shell::window::WlWindowHandler;
 
 /// Winit's Wayland state.
 pub struct WinitState {
@@ -50,7 +55,7 @@ pub struct WinitState {
     pub compositor_state: Arc<CompositorState>,
 
     /// The state of the subcompositor.
-    pub subcompositor_state: Arc<SubcompositorState>,
+    pub subcompositor_state: Option<Arc<SubcompositorState>>,
 
     /// The seat state responsible for all sorts of input.
     pub seat_state: SeatState,
@@ -58,8 +63,13 @@ pub struct WinitState {
     /// The shm for software buffers, such as cursors.
     pub shm: Shm,
 
+    /// The pool where custom cursors are allocated.
+    pub custom_cursor_pool: Arc<Mutex<SlotPool>>,
+
     /// The XDG shell that is used for widnows.
-    pub xdg_shell: XdgShell,
+    pub xdg_shell: Option<XdgShell>,
+
+    pub shell: Option<Shell>,
 
     /// The currently present windows.
     pub windows: RefCell<AHashMap<WindowId, Arc<Mutex<WindowState>>>>,
@@ -124,12 +134,17 @@ impl WinitState {
         let registry_state = RegistryState::new(globals);
         let compositor_state =
             CompositorState::bind(globals, queue_handle).map_err(WaylandError::Bind)?;
-        let subcompositor_state = SubcompositorState::bind(
+        let subcompositor_state = match SubcompositorState::bind(
             compositor_state.wl_compositor().clone(),
             globals,
             queue_handle,
-        )
-        .map_err(WaylandError::Bind)?;
+        ) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                log::warn!("Subcompositor protocol not available, ignoring CSD: {e:?}");
+                None
+            }
+        };
 
         let output_state = OutputState::new(globals, queue_handle);
         let monitors = output_state.outputs().map(MonitorHandle::new).collect();
@@ -148,16 +163,29 @@ impl WinitState {
                 (None, None)
             };
 
+        let shm = Shm::bind(globals, queue_handle).map_err(WaylandError::Bind)?;
+        let custom_cursor_pool = Arc::new(Mutex::new(SlotPool::new(2, &shm).unwrap()));
+
+        let xdg_shell = XdgShell::bind(globals, queue_handle);
+        let wl_shell = Shell::bind(globals, queue_handle);
+
+        if xdg_shell.is_err() && wl_shell.is_err() {
+            return Err(WaylandError::Bind(BindError::NotPresent).into())
+        }
+
         Ok(Self {
             registry_state,
             compositor_state: Arc::new(compositor_state),
-            subcompositor_state: Arc::new(subcompositor_state),
+            subcompositor_state: subcompositor_state.map(Arc::new),
             output_state,
             seat_state,
-            shm: Shm::bind(globals, queue_handle).map_err(WaylandError::Bind)?,
+            shm,
+            custom_cursor_pool,
 
-            xdg_shell: XdgShell::bind(globals, queue_handle).map_err(WaylandError::Bind)?,
+            xdg_shell: xdg_shell.ok(),
             xdg_activation: XdgActivationState::bind(globals, queue_handle).ok(),
+
+            shell: wl_shell.ok(),
 
             windows: Default::default(),
             window_requests: Default::default(),
@@ -246,6 +274,40 @@ impl WinitState {
 impl ShmHandler for WinitState {
     fn shm_state(&mut self) -> &mut Shm {
         &mut self.shm
+    }
+}
+
+impl WlWindowHandler for WinitState {
+    fn configure(&mut self,
+        conn: &Connection,
+        qh: &QueueHandle<Self>,
+        wl_surface: &WlSurface,
+        configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32)
+    ) {
+        let window_id = super::make_wid(wl_surface);
+
+        let pos = if let Some(pos) = self
+            .window_compositor_updates
+            .iter()
+            .position(|update| update.window_id == window_id)
+        {
+            pos
+        } else {
+            self.window_compositor_updates
+                .push(WindowCompositorUpdate::new(window_id));
+            self.window_compositor_updates.len() - 1
+        };
+
+        let window = self
+            .windows
+            .get_mut()
+            .get_mut(&window_id)
+            .expect("got configure for dead window.")
+            .lock()
+            .unwrap();
+        
+        let new_size = (configure.1, configure.2);
+        self.window_compositor_updates[pos].size = Some(new_size.into());
     }
 }
 
