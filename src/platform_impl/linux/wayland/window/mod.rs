@@ -115,7 +115,6 @@ impl Window {
 
         let xdg_window = state.xdg_shell.as_ref().map(|xdg_shell| xdg_shell.create_window(surface.clone(), default_decorations, &queue_handle));
         let wl_window = state.shell.as_ref().map(|wl_shell| wl_shell.create_window(surface.clone(), &queue_handle));
-        println!("Window created");
 
         let mut window_state = WindowState::new(
             event_loop_window_target.connection.clone(),
@@ -126,7 +125,6 @@ impl Window {
             wl_window.clone(),
             attributes.preferred_theme,
         );
-        println!("Window STATE created");
 
         // Set transparency hint.
         window_state.set_transparent(attributes.transparent);
