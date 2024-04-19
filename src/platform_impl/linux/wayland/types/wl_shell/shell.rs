@@ -3,7 +3,7 @@ use wayland_client::{
 };
 
 use sctk::{
-    error::GlobalError, globals::{GlobalData, ProvidesBoundGlobal}, shell::WaylandSurface
+    error::GlobalError, globals::{GlobalData, ProvidesBoundGlobal}
 };
 
 use crate::platform_impl::wayland::state::WinitState;
@@ -58,7 +58,7 @@ impl Dispatch<WlShell, GlobalData, WinitState> for Shell {
     ) {
         match event {
             _ => {
-                println!("Some event was arrived!!!")
+                log::debug!("Some event was arrived!!!")
             },
         }
     }
@@ -68,10 +68,10 @@ impl<D> Dispatch<wl_shell_surface::WlShellSurface, GlobalData, D> for Shell
 where
     D: Dispatch<wl_shell_surface::WlShellSurface, GlobalData> + WlWindowHandler, {
     fn event(
-        state: &mut D,
+        _state: &mut D,
         proxy: &wl_shell_surface::WlShellSurface,
         event: wl_shell_surface::Event,
-        data: &GlobalData,
+        _data: &GlobalData,
         _conn: &Connection,
         _qhandle: &QueueHandle<D>,
     ) {
@@ -80,7 +80,7 @@ where
                 proxy.pong(serial);
             }
             wl_shell_surface::Event::Configure { edges, width, height } => {
-                println!("Configure event was arrived: {:?}, {}, {}", edges, width, height);
+                log::debug!("Configure event was arrived: {:?}, {}, {}", edges, width, height);
             },
             wl_shell_surface::Event::PopupDone => todo!(),
             _ => unreachable!(),

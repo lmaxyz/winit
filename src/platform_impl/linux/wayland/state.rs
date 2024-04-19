@@ -279,8 +279,8 @@ impl ShmHandler for WinitState {
 
 impl WlWindowHandler for WinitState {
     fn configure(&mut self,
-        conn: &Connection,
-        qh: &QueueHandle<Self>,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
         wl_surface: &WlSurface,
         configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32)
     ) {
@@ -298,7 +298,7 @@ impl WlWindowHandler for WinitState {
             self.window_compositor_updates.len() - 1
         };
 
-        let window = self
+        let _window = self
             .windows
             .get_mut()
             .get_mut(&window_id)
