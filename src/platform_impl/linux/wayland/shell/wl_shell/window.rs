@@ -1,15 +1,17 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use sctk::{compositor::Surface, shell::WaylandSurface};
-use wayland_client::{protocol::{
-    wl_output::WlOutput,
-    wl_seat::WlSeat,
-    wl_shell_surface::{Resize, WlShellSurface},
-    wl_surface::WlSurface
-}, Connection, QueueHandle};
+use wayland_client::{
+    protocol::{
+        wl_output::WlOutput,
+        wl_seat::WlSeat,
+        wl_shell_surface::{Resize, WlShellSurface},
+        wl_surface::WlSurface,
+    },
+    Connection, QueueHandle,
+};
 
 use crate::window::ResizeDirection;
-
 
 impl From<ResizeDirection> for Resize {
     fn from(value: ResizeDirection) -> Self {
@@ -26,30 +28,32 @@ impl From<ResizeDirection> for Resize {
     }
 }
 
-pub trait WlWindowHandler: Sized {
-    fn configure(&mut self,
+pub trait WindowHandler: Sized {
+    fn configure(
+        &mut self,
         conn: &Connection,
         qh: &QueueHandle<Self>,
         wl_surface: &WlSurface,
-        configure: (Resize, u32, u32)
+        configure: (Resize, u32, u32),
     );
+
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, wl_surface: &WlSurface);
 }
 
-struct WlShellWindowInner {
-    surface: Surface,
-    wl_shell_surface: WlShellSurface
+#[derive(Debug)]
+pub struct WlShellWindowInner {
+    pub surface: Surface,
+    pub wl_shell_surface: WlShellSurface,
 }
 
-#[derive(Clone)]
-pub struct WlShellWindow (Arc<WlShellWindowInner>);
+#[derive(Clone, Debug)]
+pub struct Window(Arc<WlShellWindowInner>);
 
-impl WlShellWindow {
+impl Window {
     pub fn new(surface: impl Into<Surface>, wl_shell_surface: WlShellSurface) -> Self {
-        Self(Arc::new_cyclic(|_weak| {
-            WlShellWindowInner{
-                surface: surface.into(),
-                wl_shell_surface
-            }
+        Self(Arc::new_cyclic(|_weak| WlShellWindowInner {
+            surface: surface.into(),
+            wl_shell_surface,
         }))
     }
 
@@ -58,26 +62,25 @@ impl WlShellWindow {
     }
 
     pub fn set_maximized(&self) {
-        println!("Set toplevel");
         self.0.wl_shell_surface.set_maximized(None)
     }
     pub fn set_top_level(&self) {
-        println!("Set toplevel");
         self.0.wl_shell_surface.set_toplevel()
     }
 
     pub fn set_fullscreen(&self, output: Option<&WlOutput>) {
-        println!("Set fullscreen");
-        self.0.wl_shell_surface.set_fullscreen(wayland_client::protocol::wl_shell_surface::FullscreenMethod::Fill, 60000, output);
+        self.0.wl_shell_surface.set_fullscreen(
+            wayland_client::protocol::wl_shell_surface::FullscreenMethod::Fill,
+            60000,
+            output,
+        );
     }
 
     pub fn resize(&self, seat: &WlSeat, serial: u32, edges: Resize) {
-        println!("Resize");
         self.0.wl_shell_surface.resize(seat, serial, edges)
     }
 
     pub fn move_(&self, seat: &WlSeat, serial: u32) {
-        println!("Move");
         self.0.wl_shell_surface._move(seat, serial)
     }
 
@@ -90,8 +93,11 @@ impl WlShellWindow {
     }
 }
 
-impl WaylandSurface for WlShellWindow {
+impl WaylandSurface for Window {
     fn wl_surface(&self) -> &WlSurface {
         &self.0.surface.wl_surface()
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct WindowData(pub(crate) Weak<WlShellWindowInner>);

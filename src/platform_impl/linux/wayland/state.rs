@@ -17,15 +17,19 @@ use sctk::output::{OutputHandler, OutputState};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::ThemedPointer;
 use sctk::seat::SeatState;
-use sctk::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
+#[cfg(not(feature = "wayland-wl-shell"))]
+use sctk::shell::xdg::window::{Window,WindowConfigure, WindowHandler};
+#[cfg(not(feature = "wayland-wl-shell"))]
 use sctk::shell::xdg::XdgShell;
+#[cfg(not(feature = "wayland-wl-shell"))]
 use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
-use wayland_client::globals::BindError;
 
 use crate::dpi::LogicalSize;
+#[cfg(feature = "wayland-wl-shell")]
+use crate::platform_impl::wayland::shell::wl_shell::WlShell;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::output::MonitorHandle;
 use crate::platform_impl::wayland::seat::{
@@ -33,15 +37,17 @@ use crate::platform_impl::wayland::seat::{
     WinitPointerDataExt, WinitSeatState,
 };
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+use crate::platform_impl::wayland::types::qt_surface_extension::SurfaceExtension;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
+#[cfg(not(feature = "wayland-wl-shell"))]
 use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
-use crate::platform_impl::wayland::types::wl_shell::Shell;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
 use crate::platform_impl::OsError;
 
-use super::types::wl_shell::window::WlWindowHandler;
+#[cfg(feature = "wayland-wl-shell")]
+use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
 
 /// Winit's Wayland state.
 pub struct WinitState {
@@ -67,9 +73,11 @@ pub struct WinitState {
     pub custom_cursor_pool: Arc<Mutex<SlotPool>>,
 
     /// The XDG shell that is used for widnows.
-    pub xdg_shell: Option<XdgShell>,
+    #[cfg(not(feature = "wayland-wl-shell"))]
+    pub shell: XdgShell,
 
-    pub shell: Option<Shell>,
+    #[cfg(feature = "wayland-wl-shell")]
+    pub shell: WlShell,
 
     /// The currently present windows.
     pub windows: RefCell<AHashMap<WindowId, Arc<Mutex<WindowState>>>>,
@@ -99,6 +107,7 @@ pub struct WinitState {
     /// event loop run.
     pub events_sink: EventSink,
 
+    #[cfg(not(feature = "wayland-wl-shell"))]
     /// Xdg activation.
     pub xdg_activation: Option<XdgActivationState>,
 
@@ -123,6 +132,9 @@ pub struct WinitState {
     /// Whether we have dispatched events to the user thus we want to
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
+
+    //Surface extension
+    pub surface_extension: Option<SurfaceExtension>,
 }
 
 impl WinitState {
@@ -165,13 +177,11 @@ impl WinitState {
 
         let shm = Shm::bind(globals, queue_handle).map_err(WaylandError::Bind)?;
         let custom_cursor_pool = Arc::new(Mutex::new(SlotPool::new(2, &shm).unwrap()));
-
-        let xdg_shell = XdgShell::bind(globals, queue_handle);
-        let wl_shell = Shell::bind(globals, queue_handle);
-
-        if xdg_shell.is_err() && wl_shell.is_err() {
-            return Err(WaylandError::Bind(BindError::NotPresent).into())
-        }
+        
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let xdg_shell = XdgShell::bind(globals, queue_handle).map_err(WaylandError::Bind)?;
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_shell = WlShell::bind(globals, queue_handle).map_err(WaylandError::Bind)?;
 
         Ok(Self {
             registry_state,
@@ -181,11 +191,14 @@ impl WinitState {
             seat_state,
             shm,
             custom_cursor_pool,
-
-            xdg_shell: xdg_shell.ok(),
+            
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            shell: xdg_shell,
+            #[cfg(not(feature = "wayland-wl-shell"))]
             xdg_activation: XdgActivationState::bind(globals, queue_handle).ok(),
 
-            shell: wl_shell.ok(),
+            #[cfg(feature = "wayland-wl-shell")]
+            shell: wl_shell,
 
             windows: Default::default(),
             window_requests: Default::default(),
@@ -194,6 +207,8 @@ impl WinitState {
             viewporter_state,
             fractional_scaling_manager,
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
+            
+            surface_extension: SurfaceExtension::new(globals, queue_handle).ok(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
@@ -277,7 +292,8 @@ impl ShmHandler for WinitState {
     }
 }
 
-impl WlWindowHandler for WinitState {
+#[cfg(feature = "wayland-wl-shell")]
+impl WindowHandler for WinitState {
     fn configure(&mut self,
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
@@ -309,8 +325,14 @@ impl WlWindowHandler for WinitState {
         let new_size = (configure.1, configure.2);
         self.window_compositor_updates[pos].size = Some(new_size.into());
     }
+
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, wl_surface: &WlSurface) {
+        let window_id = super::make_wid(wl_surface);
+        Self::queue_close(&mut self.window_compositor_updates, window_id);
+    }
 }
 
+#[cfg(not(feature = "wayland-wl-shell"))]
 impl WindowHandler for WinitState {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
         let window_id = super::make_wid(window.wl_surface());
@@ -352,6 +374,7 @@ impl WindowHandler for WinitState {
             .configure(
                 configure,
                 &self.shm,
+                &self.compositor_state,
                 &self.subcompositor_state,
                 &mut self.events_sink,
             );
@@ -475,5 +498,7 @@ sctk::delegate_compositor!(WinitState);
 sctk::delegate_output!(WinitState);
 sctk::delegate_registry!(WinitState);
 sctk::delegate_shm!(WinitState);
+#[cfg(not(feature = "wayland-wl-shell"))]
 sctk::delegate_xdg_shell!(WinitState);
+#[cfg(not(feature = "wayland-wl-shell"))]
 sctk::delegate_xdg_window!(WinitState);

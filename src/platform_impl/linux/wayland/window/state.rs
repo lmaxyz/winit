@@ -20,7 +20,11 @@ use sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge as 
 
 use sctk::compositor::{CompositorState, Region};
 use sctk::seat::pointer::ThemedPointer;
-use sctk::shell::xdg::window::{DecorationMode, Window, WindowConfigure};
+use sctk::shell::xdg::window::{
+    DecorationMode,
+    WindowConfigure
+};
+#[cfg(not(feature = "wayland-wl-shell"))]
 use sctk::shell::xdg::XdgSurface;
 use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
@@ -28,14 +32,16 @@ use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
 use wayland_client::protocol::wl_shell_surface::Resize;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::QtExtendedSurface;
 
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::event::WindowEvent;
+#[cfg(feature = "wayland-wl-shell")]
+use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::make_wid;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
-use crate::platform_impl::wayland::types::wl_shell::window::WlShellWindow;
 use crate::platform_impl::WindowId;
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
@@ -153,8 +159,13 @@ pub struct WindowState {
     has_pending_move: Option<u32>,
 
     /// The underlying SCTK window.
-    pub xdg_window: Option<Window>,
-    pub wl_window: Option<WlShellWindow>
+    #[cfg(not(feature = "wayland-wl-shell"))]
+    pub xdg_window: XdgWindow,
+    #[cfg(feature = "wayland-wl-shell")]
+    pub wl_window: WlShellWindow,
+
+    // QtExtendedSurface global, provides close event
+    _extended_surface: Option<QtExtendedSurface>
 }
 
 impl WindowState {
@@ -164,38 +175,41 @@ impl WindowState {
         queue_handle: &QueueHandle<WinitState>,
         winit_state: &WinitState,
         initial_size: Size,
-        xdg_window: Option<Window>,
-        wl_window: Option<WlShellWindow>,
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        xdg_window: XdgWindow,
+        #[cfg(feature = "wayland-wl-shell")]
+        wl_window: WlShellWindow,
         theme: Option<Theme>,
     ) -> Self {
         let compositor = winit_state.compositor_state.clone();
         let pointer_constraints = winit_state.pointer_constraints.clone();
+
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let wl_surface = xdg_window.wl_surface();
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_surface = wl_window.wl_surface();
+
         let viewport = winit_state
             .viewporter_state
             .as_ref()
             .map(|state| {
-                let wl_surface = if let Some(window) = xdg_window.as_ref() {
-                    window.wl_surface()
-                } else {
-                    wl_window.as_ref().unwrap().wl_surface()
-                };
+                
                 state.get_viewport(wl_surface, queue_handle)
             });
+
         let fractional_scale = winit_state
             .fractional_scaling_manager
             .as_ref()
             .map(|fsm| {
-                let wl_surface = if let Some(window) = xdg_window.as_ref() {
-                    window.wl_surface()
-                } else {
-                    wl_window.as_ref().unwrap().wl_surface()
-                };
                 fsm.fractional_scaling(wl_surface, queue_handle)
             });
+
+        let extended_surface = winit_state.surface_extension.as_ref().map(|se| se.get_extended_surface(wl_surface, &queue_handle));
 
         Self {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
+            _extended_surface: extended_surface,
             compositor,
             connection,
             csd_fails: false,
@@ -228,7 +242,9 @@ impl WindowState {
             title: String::default(),
             transparent: false,
             viewport,
+            #[cfg(not(feature = "wayland-wl-shell"))]
             xdg_window,
+            #[cfg(feature = "wayland-wl-shell")]
             wl_window
         }
     }
@@ -264,11 +280,10 @@ impl WindowState {
 
     /// Request a frame callback if we don't have one for this window in flight.
     pub fn request_frame_callback(&mut self) {
-        let surface = if let Some(window) = self.xdg_window.as_ref() {
-            window.wl_surface()
-        } else {
-            self.wl_window.as_ref().unwrap().wl_surface()
-        };
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let surface = self.xdg_window.wl_surface();
+        #[cfg(feature = "wayland-wl-shell")]
+        let surface = self.wl_window.wl_surface();
         match self.frame_callback_state {
             FrameCallbackState::None | FrameCallbackState::Received => {
                 self.frame_callback_state = FrameCallbackState::Requested;
@@ -282,6 +297,7 @@ impl WindowState {
         &mut self,
         configure: WindowConfigure,
         shm: &Shm,
+        compositor: &Arc<CompositorState>,
         subcompositor: &Option<Arc<SubcompositorState>>,
         event_sink: &mut EventSink,
     ) -> LogicalSize<u32> {
@@ -297,23 +313,16 @@ impl WindowState {
             && self.frame.is_none()
             && !self.csd_fails
         {
-            let frame = if let Some(window) = self.wl_window.as_ref() {
-                WinitFrame::new(
-                    window,
-                    shm,
-                    subcompositor.clone().unwrap(),
-                    self.queue_handle.clone(),
-                    #[cfg(feature = "sctk-adwaita")]
-                    into_sctk_adwaita_config(self.theme))
-            } else {
-                WinitFrame::new(
-                    self.xdg_window.as_ref().unwrap(),
-                    shm,
-                    subcompositor.clone().unwrap(),
-                    self.queue_handle.clone(),
-                    #[cfg(feature = "sctk-adwaita")]
-                    into_sctk_adwaita_config(self.theme))
-            };
+            let frame = WinitFrame::new(
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                &self.xdg_window,
+                #[cfg(feature = "wayland-wl-shell")]
+                &self.wl_window,    
+                shm,
+                subcompositor.clone().unwrap(),
+                self.queue_handle.clone(),
+                #[cfg(feature = "sctk-adwaita")]
+                into_sctk_adwaita_config(self.theme));
             match frame {
                 Ok(mut frame) => {
                     frame.set_title(&self.title);
@@ -342,12 +351,12 @@ impl WindowState {
             .map(|c| c.state.contains(XdgWindowState::SUSPENDED))
             .unwrap_or(false)
             != occluded
-        {
-            let wl_surface = if let Some(window) = self.xdg_window.as_ref() {
-                window.wl_surface()
-            } else {
-                self.wl_window.as_ref().unwrap().wl_surface()
-            };
+        {   
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            let wl_surface = self.xdg_window.wl_surface();
+            #[cfg(feature = "wayland-wl-shell")]
+            let wl_surface = self.wl_window.wl_surface();
+
             let window_id = make_wid(wl_surface);
             event_sink.push_window_event(WindowEvent::Occluded(occluded), window_id);
         }
@@ -432,15 +441,19 @@ impl WindowState {
 
     /// Start interacting drag resize.
     pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
-        let xdg_toplevel = self.xdg_window.as_ref().map(|w| w.xdg_toplevel());
-        let wl_shell_surface = self.wl_window.as_ref().map(|w| w.wl_shell_surface());
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let xdg_toplevel = self.xdg_window.xdg_toplevel();
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_shell_surface = self.wl_window.wl_shell_surface();
 
         // TODO(kchibisov) handle touch serials.
         self.apply_on_poiner(|_, data| {
             let serial = data.latest_button_serial();
             let seat = data.seat();
-            xdg_toplevel.as_ref().map(|tl| tl.resize(seat, serial, direction.into()));
-            wl_shell_surface.as_ref().map(|ws_surf| ws_surf.resize(seat, serial, direction.into()));
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            xdg_toplevel.resize(seat, serial, direction.into());
+            #[cfg(feature = "wayland-wl-shell")]
+            wl_shell_surface.resize(seat, serial, direction.into());
         });
 
         Ok(())
@@ -448,14 +461,18 @@ impl WindowState {
 
     /// Start the window drag.
     pub fn drag_window(&self) -> Result<(), ExternalError> {
-        let xdg_toplevel = self.xdg_window.as_ref().map(|w| w.xdg_toplevel());
-        let wl_shell_surface = self.wl_window.as_ref().map(|w| w.wl_shell_surface());
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let xdg_toplevel = self.xdg_window.xdg_toplevel();
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_shell_surface = self.wl_window.wl_shell_surface();
         // TODO(kchibisov) handle touch serials.
         self.apply_on_poiner(|_, data| {
             let serial = data.latest_button_serial();
             let seat = data.seat();
-            xdg_toplevel.as_ref().map(|tl| tl._move(seat, serial));
-            wl_shell_surface.as_ref().map(|ws_surf| ws_surf._move(seat, serial));
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            xdg_toplevel._move(seat, serial);
+            #[cfg(feature = "wayland-wl-shell")]
+            wl_shell_surface._move(seat, serial);
         });
 
         Ok(())
@@ -475,16 +492,21 @@ impl WindowState {
     ) -> Option<bool> {
         match self.frame.as_mut()?.on_click(timestamp, click, pressed)? {
             FrameAction::Minimize => {
-                self.xdg_window.as_ref().map(|w| w.set_minimized());
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.set_minimized();
                 // For `wl_shell` set_minimized is not available 
             },
             FrameAction::Maximize => {
-                self.xdg_window.as_ref().map(|w| w.set_maximized());
-                self.wl_window.as_ref().map(|w| w.set_maximized());
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.set_maximized();
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_window.set_maximized();
             },
             FrameAction::UnMaximize => {
-                self.xdg_window.as_ref().map(|w| w.unset_maximized());
-                self.wl_window.as_ref().map(|w| w.set_top_level());
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.unset_maximized();
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_window.set_top_level();
             },
             FrameAction::Close => WinitState::queue_close(updates, window_id),
             FrameAction::Move => self.has_pending_move = Some(serial),
@@ -513,11 +535,14 @@ impl WindowState {
                     ResizeEdge::None => Resize::None,
                     _ => return None
                 };
-                self.xdg_window.as_ref().map(|w: &Window| w.resize(seat, serial, xdg_edge));
-                self.wl_window.as_ref().map(|w| w.resize(seat, serial, wl_edge));
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.resize(seat, serial, xdg_edge);
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_window.resize(seat, serial, wl_edge);
             }
             FrameAction::ShowMenu(x, y) => {
-                self.xdg_window.as_ref().map(|w: &Window| w.show_window_menu(seat, serial, (x, y)));
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.show_window_menu(seat, serial, (x, y));
                 // WlShell has not `show_menu` method
             },
             _ => (),
@@ -549,8 +574,10 @@ impl WindowState {
             // If we have a cursor change, that means that cursor is over the decorations,
             // so try to apply move.
             if let Some(serial) = cursor.is_some().then_some(serial).flatten() {
-                self.xdg_window.as_ref().map(|w| w.move_(seat, serial));
-                self.wl_window.as_ref().map(|w| w.move_(seat, serial));
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.move_(seat, serial);
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_window.move_(seat, serial);
                 None
             } else {
                 cursor
@@ -685,11 +712,10 @@ impl WindowState {
 
     /// Reissue the transparency hint to the compositor.
     pub fn reload_transparency_hint(&self) {
-        let surface = if let Some(window) = self.xdg_window.as_ref() {
-            window.wl_surface()
-        } else {
-            self.wl_window.as_ref().unwrap().wl_surface()
-        };
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let surface = self.xdg_window.wl_surface();
+        #[cfg(feature = "wayland-wl-shell")]
+        let surface = self.wl_window.wl_surface();
 
         if self.transparent {
             surface.set_opaque_region(None);
@@ -746,12 +772,13 @@ impl WindowState {
         self.reload_transparency_hint();
 
         // Set the window geometry.
-        self.xdg_window.as_ref().map(|w| w.xdg_surface().set_window_geometry(
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        self.xdg_window.xdg_surface().set_window_geometry(
             x,
             y,
             outer_size.width as i32,
             outer_size.height as i32,
-        ));
+        );
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
@@ -859,7 +886,8 @@ impl WindowState {
             .unwrap_or(size);
 
         self.min_inner_size = size;
-        self.xdg_window.as_ref().map(|w| w.set_min_size(Some(size.into())));
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        self.xdg_window.set_min_size(Some(size.into()));
     }
 
     /// Set maximum inner window size.
@@ -872,7 +900,8 @@ impl WindowState {
         });
 
         self.max_inner_size = size;
-        self.xdg_window.as_ref().map(|w| w.set_max_size(size.map(Into::into)));
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        self.xdg_window.set_max_size(size.map(Into::into));
     }
 
     /// Set the CSD theme.
@@ -924,11 +953,11 @@ impl WindowState {
             }
         }
 
-        let surface = if let Some(window) = self.xdg_window.as_ref() {
-            window.wl_surface()
-        } else {
-            self.wl_window.as_ref().unwrap().wl_surface()
-        };
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let surface = self.xdg_window.wl_surface();
+        #[cfg(feature = "wayland-wl-shell")]
+        let surface = self.wl_window.wl_surface();
+
         match mode {
             CursorGrabMode::Locked => self.apply_on_poiner(|pointer, data| {
                 let pointer = pointer.pointer();
@@ -948,10 +977,11 @@ impl WindowState {
 
     pub fn show_window_menu(&self, position: LogicalPosition<u32>) {
         // TODO(kchibisov) handle touch serials.
+        #[cfg(not(feature = "wayland-wl-shell"))]
         self.apply_on_poiner(|_, data| {
             let serial = data.latest_button_serial();
             let seat = data.seat();
-            self.xdg_window.as_ref().map(|w: &Window| w.show_window_menu(seat, serial, position.into()));
+            self.xdg_window.show_window_menu(seat, serial, position.into());
         });
     }
 
@@ -1002,7 +1032,8 @@ impl WindowState {
         }
 
         self.decorate = decorate;
-
+        
+        #[cfg(not(feature = "wayland-wl-shell"))]
         match self
             .last_configure
             .as_ref()
@@ -1010,10 +1041,10 @@ impl WindowState {
         {
             Some(DecorationMode::Server) if !self.decorate => {
                 // To disable decorations we should request client and hide the frame.
-                self.xdg_window.as_ref().map(|w| w.request_decoration_mode(Some(DecorationMode::Client)));
+                self.xdg_window.request_decoration_mode(Some(DecorationMode::Client));
             }
             _ if self.decorate => {
-                self.xdg_window.as_ref().map(|w| w.request_decoration_mode(Some(DecorationMode::Server)));
+                self.xdg_window.request_decoration_mode(Some(DecorationMode::Server));
             },
             _ => (),
         }
@@ -1087,8 +1118,10 @@ impl WindowState {
 
         // NOTE: When fractional scaling is not used update the buffer scale.
         if self.fractional_scale.is_none() {
-            let _ = self.xdg_window.as_ref().map(|w| w.set_buffer_scale(self.scale_factor as _));
-            let _ = self.wl_window.as_ref().map(|w| w.set_buffer_scale(self.scale_factor as _));
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            let _ = self.xdg_window.set_buffer_scale(self.scale_factor as _);
+            #[cfg(feature = "wayland-wl-shell")]
+            let _ = self.wl_window.set_buffer_scale(self.scale_factor as _);
         }
 
         if let Some(frame) = self.frame.as_mut() {
@@ -1099,11 +1132,11 @@ impl WindowState {
     /// Make window background blurred
     #[inline]
     pub fn set_blur(&mut self, blurred: bool) {
-        let wl_surface = if let Some(window) = self.xdg_window.as_ref() {
-            window.wl_surface()
-        } else {
-            self.wl_window.as_ref().unwrap().wl_surface()
-        };
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let wl_surface = self.xdg_window.wl_surface();
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_surface = self.wl_window.wl_surface();
+
         if blurred && self.blur.is_none() {
             if let Some(blur_manager) = self.blur_manager.as_ref() {
                 let blur = blur_manager.blur(wl_surface, &self.queue_handle);
@@ -1140,8 +1173,10 @@ impl WindowState {
             frame.set_title(&title);
         }
 
-        self.xdg_window.as_ref().map(|w| w.set_title(&title));
-        self.wl_window.as_ref().map(|w| w.set_title(&title));
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        self.xdg_window.set_title(&title);
+        #[cfg(feature = "wayland-wl-shell")]
+        self.wl_window.set_title(&title);
         self.title = title;
     }
 

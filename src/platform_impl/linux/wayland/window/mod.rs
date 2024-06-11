@@ -10,10 +10,15 @@ use sctk::reexports::client::Proxy;
 use sctk::reexports::client::QueueHandle;
 
 use sctk::compositor::{CompositorState, Region, SurfaceData};
+#[cfg(not(feature = "wayland-wl-shell"))]
 use sctk::reexports::protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
-use sctk::shell::xdg::window::Window as SctkWindow;
+#[cfg(not(feature = "wayland-wl-shell"))]
+use sctk::shell::xdg::window::Window as XdgWindow;
+#[cfg(not(feature = "wayland-wl-shell"))]
 use sctk::shell::xdg::window::WindowDecorations;
 use sctk::shell::WaylandSurface;
+#[cfg(feature = "wayland-wl-shell")]
+use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 
 use log::warn;
 
@@ -33,8 +38,8 @@ use crate::window::{
 use super::event_loop::sink::EventSink;
 use super::output::MonitorHandle;
 use super::state::WinitState;
+#[cfg(not(feature = "wayland-wl-shell"))]
 use super::types::xdg_activation::XdgActivationTokenData;
-use super::types::wl_shell::window::WlShellWindow;
 use super::{EventLoopWindowTarget, WaylandError, WindowId};
 
 pub(crate) mod state;
@@ -44,8 +49,10 @@ pub use state::WindowState;
 /// The Wayland window.
 pub struct Window {
     /// Reference to the underlying SCTK window.
-    xdg_window: Option<SctkWindow>,
-    wl_window: Option<WlShellWindow>,
+    #[cfg(not(feature = "wayland-wl-shell"))]
+    xdg_window: XdgWindow,
+    #[cfg(feature = "wayland-wl-shell")]
+    wl_shell_window: WlShellWindow,
 
     /// Window id.
     window_id: WindowId,
@@ -61,6 +68,7 @@ pub struct Window {
     display: WlDisplay,
 
     /// Xdg activation to request user attention.
+    #[cfg(not(feature = "wayland-wl-shell"))]
     xdg_activation: Option<XdgActivationV1>,
 
     /// The state of the requested attention from the `xdg_activation`.
@@ -95,6 +103,7 @@ impl Window {
 
         let surface = state.compositor_state.create_surface(&queue_handle);
         let compositor = state.compositor_state.clone();
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let xdg_activation = state
             .xdg_activation
             .as_ref()
@@ -107,22 +116,27 @@ impl Window {
 
         // We prefer server side decorations, however to not have decorations we ask for client
         // side decorations instead.
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let default_decorations = if attributes.decorations {
             WindowDecorations::RequestServer
         } else {
             WindowDecorations::RequestClient
         };
 
-        let xdg_window = state.xdg_shell.as_ref().map(|xdg_shell| xdg_shell.create_window(surface.clone(), default_decorations, &queue_handle));
-        let wl_window = state.shell.as_ref().map(|wl_shell| wl_shell.create_window(surface.clone(), &queue_handle));
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let xdg_window = state.shell.create_window(surface.clone(), default_decorations, &queue_handle);
+        #[cfg(feature = "wayland-wl-shell")]
+        let wl_shell_window = state.shell.create_window(surface.clone(), &queue_handle);
 
         let mut window_state = WindowState::new(
             event_loop_window_target.connection.clone(),
             &event_loop_window_target.queue_handle,
             &state,
             size,
+            #[cfg(not(feature = "wayland-wl-shell"))]
             xdg_window.clone(),
-            wl_window.clone(),
+            #[cfg(feature = "wayland-wl-shell")]
+            wl_shell_window.clone(),
             attributes.preferred_theme,
         );
 
@@ -136,9 +150,10 @@ impl Window {
 
         // Set the app_id.
         if let Some(name) = platform_attributes.name.map(|name| name.general) {
-            println!("Set App ID: {}", name.as_str());
-            xdg_window.as_ref().map(|w| w.set_app_id(&name));
-            wl_window.as_ref().map(|w| w.set_app_id(&name));
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            xdg_window.set_app_id(&name);
+            #[cfg(feature = "wayland-wl-shell")]
+            wl_shell_window.set_app_id(&name);
         }
 
         // Set the window title.
@@ -165,16 +180,21 @@ impl Window {
                     #[cfg(x11_platform)]
                     PlatformMonitorHandle::X(_) => None,
                 });
-                xdg_window.as_ref().map(|w| w.set_fullscreen(output.as_ref()));
-                wl_window.as_ref().map(|w| w.set_fullscreen(output.as_ref()));
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                xdg_window.set_fullscreen(output.as_ref());
+                #[cfg(feature = "wayland-wl-shell")]
+                wl_shell_window.set_fullscreen(output.as_ref());
             }
             _ if attributes.maximized => {
-                xdg_window.as_ref().map(|w| w.set_maximized());
-                wl_window.as_ref().map(|w| w.set_maximized());
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                xdg_window.set_maximized();
+                #[cfg(feature = "wayland-wl-shell")]
+                wl_shell_window.set_maximized();
             },
             _ => (),
         };
 
+        #[cfg(not(feature = "wayland-wl-shell"))]
         // Activate the window when the token is passed.
         if let (Some(xdg_activation), Some(token)) = (
             xdg_activation.as_ref(),
@@ -184,8 +204,10 @@ impl Window {
         }
 
         // XXX Do initial commit.
-        xdg_window.as_ref().map(|w| w.commit());
-        wl_window.as_ref().map(|w| w.commit());
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        xdg_window.commit();
+        #[cfg(feature = "wayland-wl-shell")]
+        wl_shell_window.commit();
 
         // Add the window and window requests into the state.
         let window_state = Arc::new(Mutex::new(window_state));
@@ -219,14 +241,13 @@ impl Window {
         })?;
 
         // XXX Wait for the initial configure to arrive.
-        if xdg_window.is_some() {
-            while !window_state.lock().unwrap().is_configured() {
-                event_queue.blocking_dispatch(&mut state).map_err(|error| {
-                    os_error!(OsError::WaylandError(Arc::new(WaylandError::Dispatch(
-                        error
-                    ))))
-                })?;
-            }
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        while !window_state.lock().unwrap().is_configured() {
+            event_queue.blocking_dispatch(&mut state).map_err(|error| {
+                os_error!(OsError::WaylandError(Arc::new(WaylandError::Dispatch(
+                    error
+                ))))
+            })?;
         }
 
         // Wake-up event loop, so it'll send initial redraw requested.
@@ -234,14 +255,17 @@ impl Window {
         event_loop_awakener.ping();
 
         Ok(Self {
+            #[cfg(not(feature = "wayland-wl-shell"))]
             xdg_window,
-            wl_window,
+            #[cfg(feature = "wayland-wl-shell")]
+            wl_shell_window,
             display,
             monitors,
             window_id,
             compositor,
             window_state,
             queue_handle,
+            #[cfg(not(feature = "wayland-wl-shell"))]
             xdg_activation,
             attention_requested: Arc::new(AtomicBool::new(false)),
             event_loop_awakener,
@@ -459,9 +483,8 @@ impl Window {
             return;
         }
 
-        if let Some(window) = self.xdg_window.as_ref() {
-            window.set_minimized();
-        }
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        self.xdg_window.set_minimized();
     }
 
     #[inline]
@@ -477,16 +500,12 @@ impl Window {
 
     #[inline]
     pub fn set_maximized(&self, maximized: bool) {
-        println!("SET MAXIMIZED");
-        if maximized {
-            if let Some(window) = self.xdg_window.as_ref() {
-                window.set_maximized()
+            #[cfg(not(feature = "wayland-wl-shell"))]
+            if maximized {
+                self.xdg_window.set_maximized()
+            } else {
+                self.xdg_window.unset_maximized()
             }
-        } else {
-            if let Some(window) = self.xdg_window.as_ref() {
-                window.unset_maximized()
-            }
-        }
     }
 
     #[inline]
@@ -520,16 +539,16 @@ impl Window {
                     #[cfg(x11_platform)]
                     PlatformMonitorHandle::X(_) => None,
                 });
-                if let Some(window) = self.xdg_window.as_ref() {
-                    window.set_fullscreen(output.as_ref())
-                } else {
-                    self.wl_window.as_ref().unwrap().set_fullscreen(output.as_ref())
-                }
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.set_fullscreen(output.as_ref());
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_shell_window.set_fullscreen(output.as_ref());
             }
-            None => if let Some(window) = self.xdg_window.as_ref() {
-                window.unset_fullscreen()
-            } else {
-                self.wl_window.as_ref().unwrap().set_maximized()
+            None => {
+                #[cfg(not(feature = "wayland-wl-shell"))]
+                self.xdg_window.unset_fullscreen();
+                #[cfg(feature = "wayland-wl-shell")]
+                self.wl_shell_window.set_maximized();
             },
         }
     }
@@ -548,6 +567,7 @@ impl Window {
     }
 
     pub fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let xdg_activation = match self.xdg_activation.as_ref() {
             Some(xdg_activation) => xdg_activation,
             None => {
@@ -563,28 +583,37 @@ impl Window {
         }
 
         self.attention_requested.store(true, Ordering::Relaxed);
+        
         let surface = self.surface().clone();
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let data = XdgActivationTokenData::Attention((
             surface.clone(),
             Arc::downgrade(&self.attention_requested),
         ));
-        let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
-        xdg_activation_token.set_surface(&surface);
-        xdg_activation_token.commit();
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        {
+            let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
+            xdg_activation_token.set_surface(&surface);
+            xdg_activation_token.commit();
+        }
     }
 
     pub fn request_activation_token(&self) -> Result<AsyncRequestSerial, NotSupportedError> {
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let xdg_activation = match self.xdg_activation.as_ref() {
             Some(xdg_activation) => xdg_activation,
             None => return Err(NotSupportedError::new()),
         };
 
         let serial = AsyncRequestSerial::get();
-
+        #[cfg(not(feature = "wayland-wl-shell"))]
         let data = XdgActivationTokenData::Obtain((self.window_id, serial));
-        let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
-        xdg_activation_token.set_surface(self.surface());
-        xdg_activation_token.commit();
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        {
+            let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
+            xdg_activation_token.set_surface(self.surface());
+            xdg_activation_token.commit();
+        }
 
         Ok(serial)
     }
@@ -663,13 +692,12 @@ impl Window {
 
     #[inline]
     pub fn surface(&self) -> &WlSurface {
-        if let Some(window) = self.xdg_window.as_ref() {
-            window.wl_surface()
-        } else if let Some(window) = self.wl_window.as_ref() {
-            window.wl_surface()
-        } else {
-            panic!("No window was presented.");
-        }
+        #[cfg(not(feature = "wayland-wl-shell"))]
+        let surface = self.xdg_window.wl_surface();
+        
+        #[cfg(feature = "wayland-wl-shell")]
+        let surface = self.wl_shell_window.wl_surface();
+        surface
     }
 
     #[inline]
