@@ -42,7 +42,7 @@ targets = [
 rustdoc-args = ["--cfg", "docsrs"]
 
 [features]
-default = ["rwh_06", "x11", "wayland", "wayland-wl-shell", "wayland-dlopen", "wayland-csd-adwaita"]
+default = ["rwh_06", "x11", "wayland", "wayland-dlopen", "wayland-csd-adwaita"]
 x11 = ["x11-dl", "bytemuck", "percent-encoding", "xkbcommon-dl/x11", "x11rb"]
 wayland = ["wayland-client", "wayland-backend", "wayland-protocols", "wayland-protocols-plasma", "sctk", "ahash", "memmap2"]
 wayland-dlopen = ["wayland-backend/dlopen"]

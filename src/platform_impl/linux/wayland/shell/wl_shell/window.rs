@@ -64,6 +64,7 @@ impl Window {
     pub fn set_maximized(&self) {
         self.0.wl_shell_surface.set_maximized(None)
     }
+    
     pub fn set_top_level(&self) {
         self.0.wl_shell_surface.set_toplevel()
     }
