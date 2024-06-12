@@ -24,7 +24,6 @@ impl WlShell {
         State: Dispatch<wl_shell::WlShell, GlobalData, State> + 'static,
     {
         let wl_shell = globals.bind(qh, 1..=1, GlobalData)?;
-
         Ok(WlShell { wl_shell })
     }
 
@@ -33,7 +32,6 @@ impl WlShell {
         State: Dispatch<wl_shell_surface::WlShellSurface, GlobalData, State> + 'static,
     {
         let wl_shell_surface = self.wl_shell.get_shell_surface(&surface, qh, GlobalData);
-
         Window::new(surface, wl_shell_surface)
     }
 
@@ -63,7 +61,10 @@ where
         match event {
             wl_shell_surface::Event::Ping { serial } => {
                 proxy.pong(serial);
-            }
+            },
+            wl_shell_surface::Event::Configure { edges: _, width:  _, height: _ } => {
+                warn!("Configure event recieved.")
+            },
             _ => unreachable!(),
         }
     }
@@ -80,7 +81,7 @@ impl Dispatch<wl_shell::WlShell, GlobalData, WinitState> for WlShell {
     ) {
         match event {
             _ => {
-                println!("Some event was arrived!!!")
+                debug!("Some event was arrived!!!")
             },
         }
     }

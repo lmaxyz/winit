@@ -10,20 +10,14 @@ use sctk::reexports::client::protocol::wl_seat::WlSeat;
 use sctk::reexports::client::protocol::wl_shm::WlShm;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
-use sctk::reexports::csd_frame::{
-    DecorationsFrame, FrameAction, FrameClick, ResizeEdge, WindowState as XdgWindowState,
-};
+use sctk::reexports::csd_frame::{FrameAction, ResizeEdge, DecorationsFrame, FrameClick};
 use sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
 use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
-use sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge as XdgResizeEdge;
 
 use sctk::compositor::{CompositorState, Region};
 use sctk::seat::pointer::ThemedPointer;
-use sctk::shell::xdg::window::{
-    DecorationMode,
-    WindowConfigure
-};
+use sctk::shell::xdg::window::WindowConfigure;
 use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
@@ -34,10 +28,10 @@ use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::Qt
 
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
-use crate::event::WindowEvent;
+// use crate::event::WindowEvent;
 use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
-use crate::platform_impl::wayland::make_wid;
+// use crate::platform_impl::wayland::make_wid;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::WindowId;
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
@@ -49,8 +43,6 @@ use crate::platform_impl::wayland::state::{WindowCompositorUpdate, WinitState};
 
 #[cfg(feature = "sctk-adwaita")]
 pub type WinitFrame = sctk_adwaita::AdwaitaFrame<WinitState>;
-#[cfg(not(feature = "sctk-adwaita"))]
-pub type WinitFrame = sctk::shell::xdg::fallback_frame::FallbackFrame<WinitState>;
 
 // Minimum window inner size.
 const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
@@ -124,7 +116,7 @@ pub struct WindowState {
     size: LogicalSize<u32>,
 
     /// Whether the CSD fail to create, so we don't try to create them on each iteration.
-    csd_fails: bool,
+    _csd_fails: bool,
 
     /// Whether we should decorate the frame.
     decorate: bool,
@@ -181,7 +173,6 @@ impl WindowState {
             .viewporter_state
             .as_ref()
             .map(|state| {
-                
                 state.get_viewport(wl_surface, queue_handle)
             });
 
@@ -200,7 +191,7 @@ impl WindowState {
             _extended_surface: extended_surface,
             compositor,
             connection,
-            csd_fails: false,
+            _csd_fails: false,
             cursor_grab_mode: GrabState::new(),
             cursor_icon: CursorIcon::Default,
             cursor_visible: true,
@@ -278,10 +269,10 @@ impl WindowState {
     pub fn configure(
         &mut self,
         configure: WindowConfigure,
-        shm: &Shm,
+        _shm: &Shm,
         _compositor: &Arc<CompositorState>,
-        subcompositor: &Option<Arc<SubcompositorState>>,
-        event_sink: &mut EventSink,
+        _subcompositor: &Option<Arc<SubcompositorState>>,
+        _event_sink: &mut EventSink,
     ) -> LogicalSize<u32> {
         // NOTE: when using fractional scaling or wl_compositor@v6 the scaling
         // should be delivered before the first configure, thus apply it to
@@ -291,51 +282,23 @@ impl WindowState {
             self.stateless_size = self.size;
         }
 
-        if configure.decoration_mode == DecorationMode::Client
-            && self.frame.is_none()
-            && !self.csd_fails
-        {
-            let frame = WinitFrame::new(
-                &self.wl_window,    
-                shm,
-                subcompositor.clone().unwrap(),
-                self.queue_handle.clone(),
-                #[cfg(feature = "sctk-adwaita")]
-                into_sctk_adwaita_config(self.theme));
-            match frame {
-                Ok(mut frame) => {
-                    frame.set_title(&self.title);
-                    frame.set_scaling_factor(self.scale_factor);
-                    // Hide the frame if we were asked to not decorate.
-                    frame.set_hidden(!self.decorate);
-                    self.frame = Some(frame);
-                }
-                Err(err) => {
-                    warn!("Failed to create client side decorations frame: {err}");
-                    self.csd_fails = true;
-                }
-            }
-        } else if configure.decoration_mode == DecorationMode::Server {
-            // Drop the frame for server side decorations to save resources.
-            self.frame = None;
-        }
-
         let stateless = Self::is_stateless(&configure);
 
         // Emit `Occluded` event on suspension change.
-        let occluded = configure.state.contains(XdgWindowState::SUSPENDED);
-        if self
-            .last_configure
-            .as_ref()
-            .map(|c| c.state.contains(XdgWindowState::SUSPENDED))
-            .unwrap_or(false)
-            != occluded
-        {   
-            let wl_surface = self.wl_window.wl_surface();
+        // ToDo: Make occluded by OnscreenVisibility event of qt_extended_surface
+        // let occluded = configure.state.contains(XdgWindowState::SUSPENDED);
+        // if self
+        //     .last_configure
+        //     .as_ref()
+        //     .map(|c| c.state.contains(XdgWindowState::SUSPENDED))
+        //     .unwrap_or(false)
+        //     != occluded
+        // {   
+        //     let wl_surface = self.wl_window.wl_surface();
 
-            let window_id = make_wid(wl_surface);
-            event_sink.push_window_event(WindowEvent::Occluded(occluded), window_id);
-        }
+        //     let window_id = make_wid(wl_surface);
+        //     event_sink.push_window_event(WindowEvent::Occluded(occluded), window_id);
+        // }
 
         let (mut new_size, constrain) = if let Some(frame) = self.frame.as_mut() {
             // Configure the window states.
@@ -376,9 +339,6 @@ impl WindowState {
                 .map(|bound_h| new_size.height.min(bound_h.get()))
                 .unwrap_or(new_size.height);
         }
-
-        // XXX Set the configure before doing a resize.
-        self.last_configure = Some(configure);
 
         // XXX Update the new size right away.
         self.resize(new_size);
@@ -469,18 +429,6 @@ impl WindowState {
             FrameAction::Close => WinitState::queue_close(updates, window_id),
             FrameAction::Move => self.has_pending_move = Some(serial),
             FrameAction::Resize(edge) => {
-                // let xdg_edge = match edge {
-                //     ResizeEdge::None => XdgResizeEdge::None,
-                //     ResizeEdge::Top => XdgResizeEdge::Top,
-                //     ResizeEdge::Bottom => XdgResizeEdge::Bottom,
-                //     ResizeEdge::Left => XdgResizeEdge::Left,
-                //     ResizeEdge::TopLeft => XdgResizeEdge::TopLeft,
-                //     ResizeEdge::BottomLeft => XdgResizeEdge::BottomLeft,
-                //     ResizeEdge::Right => XdgResizeEdge::Right,
-                //     ResizeEdge::TopRight => XdgResizeEdge::TopRight,
-                //     ResizeEdge::BottomRight => XdgResizeEdge::BottomRight,
-                //     _ => return None,
-                // };
                 let wl_edge = match edge {
                     ResizeEdge::Bottom => Resize::Bottom,
                     ResizeEdge::BottomLeft => Resize::BottomLeft,
@@ -595,17 +543,8 @@ impl WindowState {
 
     #[inline]
     pub fn is_decorated(&mut self) -> bool {
-        let csd = self
-            .last_configure
-            .as_ref()
-            .map(|configure| configure.decoration_mode == DecorationMode::Client)
-            .unwrap_or(false);
-        if let Some(frame) = csd.then_some(self.frame.as_ref()).flatten() {
-            !frame.is_hidden()
-        } else {
-            // Server side decorations.
-            true
-        }
+        // There is only server side decorations available for wl_shell.
+        true
     }
 
     /// Get the outer size of the window.
@@ -1189,21 +1128,6 @@ pub enum FrameCallbackState {
     Requested,
     /// The callback was marked as done, and user could receive redraw requested
     Received,
-}
-
-impl From<ResizeDirection> for XdgResizeEdge {
-    fn from(value: ResizeDirection) -> Self {
-        match value {
-            ResizeDirection::North => XdgResizeEdge::Top,
-            ResizeDirection::West => XdgResizeEdge::Left,
-            ResizeDirection::NorthWest => XdgResizeEdge::TopLeft,
-            ResizeDirection::NorthEast => XdgResizeEdge::TopRight,
-            ResizeDirection::East => XdgResizeEdge::Right,
-            ResizeDirection::SouthWest => XdgResizeEdge::BottomLeft,
-            ResizeDirection::SouthEast => XdgResizeEdge::BottomRight,
-            ResizeDirection::South => XdgResizeEdge::Bottom,
-        }
-    }
 }
 
 // NOTE: Rust doesn't allow `From<Option<Theme>>`.
