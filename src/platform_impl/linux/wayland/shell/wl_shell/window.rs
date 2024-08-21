@@ -101,4 +101,4 @@ impl WaylandSurface for Window {
 }
 
 #[derive(Debug, Clone)]
-pub struct WindowData(pub(crate) Weak<WlShellWindowInner>);
+pub struct _WindowData(pub(crate) Weak<WlShellWindowInner>);

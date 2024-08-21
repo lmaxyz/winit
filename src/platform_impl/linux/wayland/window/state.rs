@@ -25,6 +25,7 @@ use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::QtExtendedSurface;
 use sctk::reexports::client::protocol::wl_shell_surface::Resize;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
@@ -157,6 +158,9 @@ pub struct WindowState {
     // field drop order guarantees.
     /// The window frame, which is created from the configure request.
     frame: Option<WinitFrame>,
+
+    // QtExtendedSurface global, provides close event
+    _extended_surface: Option<QtExtendedSurface>
 }
 
 impl WindowState {
@@ -179,6 +183,9 @@ impl WindowState {
             .fractional_scaling_manager
             .as_ref()
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
+
+        let extended_surface = winit_state.surface_extension.as_ref()
+            .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
         Self {
             blur: None,
@@ -216,6 +223,7 @@ impl WindowState {
             transparent: false,
             viewport,
             window,
+            _extended_surface: extended_surface
         }
     }
 
