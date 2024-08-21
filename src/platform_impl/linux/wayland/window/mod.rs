@@ -169,13 +169,6 @@ impl Window {
             os_error!(OsError::WaylandError(Arc::new(WaylandError::Dispatch(error))))
         })?;
 
-        // XXX Wait for the initial configure to arrive.
-        while !window_state.lock().unwrap().is_configured() {
-            event_queue.blocking_dispatch(&mut state).map_err(|error| {
-                os_error!(OsError::WaylandError(Arc::new(WaylandError::Dispatch(error))))
-            })?;
-        }
-
         // Wake-up event loop, so it'll send initial redraw requested.
         let event_loop_awakener = event_loop_window_target.event_loop_awakener.clone();
         event_loop_awakener.ping();
