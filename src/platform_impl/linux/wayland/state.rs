@@ -2,23 +2,19 @@ use std::cell::RefCell;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use ahash::AHashMap;
 
+use ahash::AHashMap;
+use sctk::compositor::{CompositorHandler, CompositorState};
+use sctk::output::{OutputHandler, OutputState};
 use sctk::reexports::calloop::LoopHandle;
 use sctk::reexports::client::backend::ObjectId;
 use sctk::reexports::client::globals::GlobalList;
 use sctk::reexports::client::protocol::wl_output::WlOutput;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Connection, Proxy, QueueHandle};
-
-use sctk::compositor::{CompositorHandler, CompositorState};
-use sctk::output::{OutputHandler, OutputState};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::ThemedPointer;
 use sctk::seat::SeatState;
-use sctk::shell::xdg::window::{Window, WindowConfigure, WindowHandler};
-use sctk::shell::xdg::XdgShell;
-use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
@@ -29,13 +25,17 @@ use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, RelativePointerState, TextInputState, WinitPointerData,
     WinitPointerDataExt, WinitSeatState,
 };
+use crate::platform_impl::wayland::types::qt_surface_extension::SurfaceExtension;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
-use crate::platform_impl::wayland::types::xdg_activation::XdgActivationState;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
 use crate::platform_impl::wayland::{WaylandError, WindowId};
 use crate::platform_impl::OsError;
+
+use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
+use crate::platform_impl::wayland::shell::wl_shell::WlShell;
+
 
 /// Winit's Wayland state.
 pub struct WinitState {
@@ -60,8 +60,8 @@ pub struct WinitState {
     /// The pool where custom cursors are allocated.
     pub custom_cursor_pool: Arc<Mutex<SlotPool>>,
 
-    /// The XDG shell that is used for windows.
-    pub xdg_shell: XdgShell,
+    /// The Wl shell that is used for windows.
+    pub shell: WlShell,
 
     /// The currently present windows.
     pub windows: RefCell<AHashMap<WindowId, Arc<Mutex<WindowState>>>>,
@@ -91,9 +91,6 @@ pub struct WinitState {
     /// event loop run.
     pub events_sink: EventSink,
 
-    /// Xdg activation.
-    pub xdg_activation: Option<XdgActivationState>,
-
     /// Relative pointer.
     pub relative_pointer: Option<RelativePointerState>,
 
@@ -115,6 +112,13 @@ pub struct WinitState {
     /// Whether we have dispatched events to the user thus we want to
     /// send `AboutToWait` and normally wakeup the user.
     pub dispatched_events: bool,
+
+    /// Whether the user initiated a wake up.
+    pub proxy_wake_up: bool,
+
+    // Surface extension
+    // Implements window close for Aurora OS
+    pub surface_extension: Option<SurfaceExtension>,
 }
 
 impl WinitState {
@@ -167,8 +171,7 @@ impl WinitState {
             shm,
             custom_cursor_pool,
 
-            xdg_shell: XdgShell::bind(globals, queue_handle).map_err(WaylandError::Bind)?,
-            xdg_activation: XdgActivationState::bind(globals, queue_handle).ok(),
+            shell: WlShell::bind(globals, queue_handle).map_err(WaylandError::Bind)?,
 
             windows: Default::default(),
             window_requests: Default::default(),
@@ -177,6 +180,7 @@ impl WinitState {
             viewporter_state,
             fractional_scaling_manager,
             kwin_blur_manager: KWinBlurManager::new(globals, queue_handle).ok(),
+            surface_extension: SurfaceExtension::new(globals, queue_handle).ok(),
 
             seats,
             text_input_state: TextInputState::new(globals, queue_handle).ok(),
@@ -192,6 +196,7 @@ impl WinitState {
             loop_handle,
             // Make it true by default.
             dispatched_events: true,
+            proxy_wake_up: false,
         })
     }
 
@@ -258,24 +263,23 @@ impl ShmHandler for WinitState {
 }
 
 impl WindowHandler for WinitState {
-    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, window: &Window) {
-        let window_id = super::make_wid(window.wl_surface());
+    fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, wl_surface: &WlSurface) {
+        let window_id = super::make_wid(wl_surface);
         Self::queue_close(&mut self.window_compositor_updates, window_id);
     }
 
     fn configure(
         &mut self,
-        _: &Connection,
-        _: &QueueHandle<Self>,
-        window: &Window,
-        configure: WindowConfigure,
-        _serial: u32,
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+        wl_surface: &WlSurface,
+        configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32)
     ) {
-        let window_id = super::make_wid(window.wl_surface());
+        let window_id = super::make_wid(wl_surface);
 
         let pos = if let Some(pos) =
             self.window_compositor_updates.iter().position(|update| update.window_id == window_id)
-        {
+        {   
             pos
         } else {
             self.window_compositor_updates.push(WindowCompositorUpdate::new(window_id));
@@ -283,14 +287,15 @@ impl WindowHandler for WinitState {
         };
 
         // Populate the configure to the window.
-        self.window_compositor_updates[pos].resized |= self
-            .windows
+        self.windows
             .get_mut()
             .get_mut(&window_id)
             .expect("got configure for dead window.")
             .lock()
             .unwrap()
-            .configure(configure, &self.shm, &self.subcompositor_state);
+            .resize((configure.1, configure.2).into());
+
+        self.window_compositor_updates[pos].resized = true;
 
         // NOTE: configure demands wl_surface::commit, however winit doesn't commit on behalf of the
         // users, since it can break a lot of things, thus it'll ask users to redraw instead.
@@ -431,5 +436,3 @@ sctk::delegate_compositor!(WinitState);
 sctk::delegate_output!(WinitState);
 sctk::delegate_registry!(WinitState);
 sctk::delegate_shm!(WinitState);
-sctk::delegate_xdg_shell!(WinitState);
-sctk::delegate_xdg_window!(WinitState);

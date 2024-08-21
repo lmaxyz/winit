@@ -5,8 +5,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use ahash::HashSet;
-use tracing::{info, warn};
-
+use sctk::compositor::{CompositorState, Region, SurfaceData, SurfaceDataExt};
 use sctk::reexports::client::backend::ObjectId;
 use sctk::reexports::client::protocol::wl_seat::WlSeat;
 use sctk::reexports::client::protocol::wl_shm::WlShm;
@@ -18,31 +17,30 @@ use sctk::reexports::csd_frame::{
 use sctk::reexports::protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::WpFractionalScaleV1;
 use sctk::reexports::protocols::wp::text_input::zv3::client::zwp_text_input_v3::ZwpTextInputV3;
 use sctk::reexports::protocols::wp::viewporter::client::wp_viewport::WpViewport;
-use sctk::reexports::protocols::xdg::shell::client::xdg_toplevel::ResizeEdge as XdgResizeEdge;
-
-use sctk::compositor::{CompositorState, Region, SurfaceData, SurfaceDataExt};
 use sctk::seat::pointer::{PointerDataExt, ThemedPointer};
-use sctk::shell::xdg::window::{DecorationMode, Window, WindowConfigure};
-use sctk::shell::xdg::XdgSurface;
+use sctk::shell::xdg::window::WindowConfigure;
 use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
+use tracing::{info, warn};
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
+use sctk::reexports::client::protocol::wl_shell_surface::Resize;
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
+use crate::platform_impl::wayland::seat::{
+    PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
+};
+use crate::platform_impl::wayland::state::{WindowCompositorUpdate, WinitState};
 use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor};
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::{PlatformCustomCursor, WindowId};
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
 
-use crate::platform_impl::wayland::seat::{
-    PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
-};
-use crate::platform_impl::wayland::state::{WindowCompositorUpdate, WinitState};
+use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 
 #[cfg(feature = "sctk-adwaita")]
 pub type WinitFrame = sctk_adwaita::AdwaitaFrame<WinitState>;
@@ -150,8 +148,8 @@ pub struct WindowState {
     /// The value is the serial of the event triggered moved.
     has_pending_move: Option<u32>,
 
-    /// The underlying SCTK window.
-    pub window: Window,
+    /// The underlying WlShell window.
+    pub window: WlShellWindow,
 
     // NOTE: The spec says that destroying parent(`window` in our case), will unmap the
     // subsurfaces. Thus to achieve atomic unmap of the client, drop the decorations
@@ -168,7 +166,7 @@ impl WindowState {
         queue_handle: &QueueHandle<WinitState>,
         winit_state: &WinitState,
         initial_size: Size,
-        window: Window,
+        window: WlShellWindow,
         theme: Option<Theme>,
     ) -> Self {
         let compositor = winit_state.compositor_state.clone();
@@ -273,11 +271,7 @@ impl WindowState {
             self.stateless_size = self.size;
         }
 
-        if let Some(subcompositor) = subcompositor.as_ref().filter(|_| {
-            configure.decoration_mode == DecorationMode::Client
-                && self.frame.is_none()
-                && !self.csd_fails
-        }) {
+        if let Some(subcompositor) = subcompositor.as_ref().filter(|_| self.frame.is_none() && !self.csd_fails) {
             match WinitFrame::new(
                 &self.window,
                 shm,
@@ -300,7 +294,7 @@ impl WindowState {
                     self.csd_fails = true;
                 },
             }
-        } else if configure.decoration_mode == DecorationMode::Server {
+        } else {
             // Drop the frame for server side decorations to save resources.
             self.frame = None;
         }
@@ -392,13 +386,13 @@ impl WindowState {
 
     /// Start interacting drag resize.
     pub fn drag_resize_window(&self, direction: ResizeDirection) -> Result<(), ExternalError> {
-        let xdg_toplevel = self.window.xdg_toplevel();
+        let wl_shell_surface = self.window.wl_shell_surface();
 
         // TODO(kchibisov) handle touch serials.
         self.apply_on_pointer(|_, data| {
             let serial = data.latest_button_serial();
             let seat = data.seat();
-            xdg_toplevel.resize(seat, serial, direction.into());
+            wl_shell_surface.resize(seat, serial, direction.into());
         });
 
         Ok(())
@@ -406,12 +400,12 @@ impl WindowState {
 
     /// Start the window drag.
     pub fn drag_window(&self) -> Result<(), ExternalError> {
-        let xdg_toplevel = self.window.xdg_toplevel();
+        let wl_shell_surface = self.window.wl_shell_surface();
         // TODO(kchibisov) handle touch serials.
         self.apply_on_pointer(|_, data| {
             let serial = data.latest_button_serial();
             let seat = data.seat();
-            xdg_toplevel._move(seat, serial);
+            wl_shell_surface._move(seat, serial);
         });
 
         Ok(())
@@ -430,27 +424,31 @@ impl WindowState {
         updates: &mut Vec<WindowCompositorUpdate>,
     ) -> Option<bool> {
         match self.frame.as_mut()?.on_click(timestamp, click, pressed)? {
-            FrameAction::Minimize => self.window.set_minimized(),
+            FrameAction::Minimize => {
+                // For WlShell minimizing is not available
+            },
             FrameAction::Maximize => self.window.set_maximized(),
-            FrameAction::UnMaximize => self.window.unset_maximized(),
+            FrameAction::UnMaximize => self.window.set_top_level(),
             FrameAction::Close => WinitState::queue_close(updates, window_id),
             FrameAction::Move => self.has_pending_move = Some(serial),
             FrameAction::Resize(edge) => {
                 let edge = match edge {
-                    ResizeEdge::None => XdgResizeEdge::None,
-                    ResizeEdge::Top => XdgResizeEdge::Top,
-                    ResizeEdge::Bottom => XdgResizeEdge::Bottom,
-                    ResizeEdge::Left => XdgResizeEdge::Left,
-                    ResizeEdge::TopLeft => XdgResizeEdge::TopLeft,
-                    ResizeEdge::BottomLeft => XdgResizeEdge::BottomLeft,
-                    ResizeEdge::Right => XdgResizeEdge::Right,
-                    ResizeEdge::TopRight => XdgResizeEdge::TopRight,
-                    ResizeEdge::BottomRight => XdgResizeEdge::BottomRight,
+                    ResizeEdge::None => Resize::None,
+                    ResizeEdge::Top => Resize::Top,
+                    ResizeEdge::Bottom => Resize::Bottom,
+                    ResizeEdge::Left => Resize::Left,
+                    ResizeEdge::TopLeft => Resize::TopLeft,
+                    ResizeEdge::BottomLeft => Resize::BottomLeft,
+                    ResizeEdge::Right => Resize::Right,
+                    ResizeEdge::TopRight => Resize::TopRight,
+                    ResizeEdge::BottomRight => Resize::BottomRight,
                     _ => return None,
                 };
                 self.window.resize(seat, serial, edge);
             },
-            FrameAction::ShowMenu(x, y) => self.window.show_window_menu(seat, serial, (x, y)),
+            FrameAction::ShowMenu(_x, _y) => {
+                // WlShell has not `show_menu` method
+            },
             _ => (),
         };
 
@@ -548,17 +546,8 @@ impl WindowState {
 
     #[inline]
     pub fn is_decorated(&mut self) -> bool {
-        let csd = self
-            .last_configure
-            .as_ref()
-            .map(|configure| configure.decoration_mode == DecorationMode::Client)
-            .unwrap_or(false);
-        if let Some(frame) = csd.then_some(self.frame.as_ref()).flatten() {
-            !frame.is_hidden()
-        } else {
-            // Server side decorations.
-            true
-        }
+        // There is only server side decorations available for wl_shell.
+        true
     }
 
     /// Get the outer size of the window.
@@ -640,7 +629,7 @@ impl WindowState {
     }
 
     /// Resize the window to the new inner size.
-    fn resize(&mut self, inner_size: LogicalSize<u32>) {
+    pub fn resize(&mut self, inner_size: LogicalSize<u32>) {
         self.size = inner_size;
 
         // Update the stateless size.
@@ -649,7 +638,7 @@ impl WindowState {
         }
 
         // Update the inner frame.
-        let ((x, y), outer_size) = if let Some(frame) = self.frame.as_mut() {
+        let ((_x, _y), _outer_size) = if let Some(frame) = self.frame.as_mut() {
             // Resize only visible frame.
             if !frame.is_hidden() {
                 frame.resize(
@@ -667,12 +656,12 @@ impl WindowState {
         self.reload_transparency_hint();
 
         // Set the window geometry.
-        self.window.xdg_surface().set_window_geometry(
-            x,
-            y,
-            outer_size.width as i32,
-            outer_size.height as i32,
-        );
+        // self.window.wl_shell_surface().set_window_geometry(
+        //     x,
+        //     y,
+        //     outer_size.width as i32,
+        //     outer_size.height as i32,
+        // );
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
@@ -770,7 +759,6 @@ impl WindowState {
             .unwrap_or(size);
 
         self.min_inner_size = size;
-        self.window.set_min_size(Some(size.into()));
     }
 
     /// Set maximum inner window size.
@@ -783,7 +771,6 @@ impl WindowState {
         });
 
         self.max_inner_size = size;
-        self.window.set_max_size(size.map(Into::into));
     }
 
     /// Set the CSD theme.
@@ -858,13 +845,13 @@ impl WindowState {
         Ok(())
     }
 
-    pub fn show_window_menu(&self, position: LogicalPosition<u32>) {
+    pub fn show_window_menu(&self, _position: LogicalPosition<u32>) {
         // TODO(kchibisov) handle touch serials.
-        self.apply_on_pointer(|_, data| {
-            let serial = data.latest_button_serial();
-            let seat = data.seat();
-            self.window.show_window_menu(seat, serial, position.into());
-        });
+        // self.apply_on_pointer(|_, data| {
+        //     let serial = data.latest_button_serial();
+        //     let seat = data.seat();
+        //     self.window.show_window_menu(seat, serial, position.into());
+        // });
     }
 
     /// Set the position of the cursor.
@@ -914,14 +901,14 @@ impl WindowState {
 
         self.decorate = decorate;
 
-        match self.last_configure.as_ref().map(|configure| configure.decoration_mode) {
-            Some(DecorationMode::Server) if !self.decorate => {
-                // To disable decorations we should request client and hide the frame.
-                self.window.request_decoration_mode(Some(DecorationMode::Client))
-            },
-            _ if self.decorate => self.window.request_decoration_mode(Some(DecorationMode::Server)),
-            _ => (),
-        }
+        // match self.last_configure.as_ref().map(|configure| configure.decoration_mode) {
+        //     Some(DecorationMode::Server) if !self.decorate => {
+        //         // To disable decorations we should request client and hide the frame.
+        //         self.window.request_decoration_mode(Some(DecorationMode::Client))
+        //     },
+        //     _ if self.decorate => self.window.request_decoration_mode(Some(DecorationMode::Server)),
+        //     _ => (),
+        // }
 
         if let Some(frame) = self.frame.as_mut() {
             frame.set_hidden(!decorate);
@@ -1119,21 +1106,6 @@ pub enum FrameCallbackState {
     Requested,
     /// The callback was marked as done, and user could receive redraw requested
     Received,
-}
-
-impl From<ResizeDirection> for XdgResizeEdge {
-    fn from(value: ResizeDirection) -> Self {
-        match value {
-            ResizeDirection::North => XdgResizeEdge::Top,
-            ResizeDirection::West => XdgResizeEdge::Left,
-            ResizeDirection::NorthWest => XdgResizeEdge::TopLeft,
-            ResizeDirection::NorthEast => XdgResizeEdge::TopRight,
-            ResizeDirection::East => XdgResizeEdge::Right,
-            ResizeDirection::SouthWest => XdgResizeEdge::BottomLeft,
-            ResizeDirection::SouthEast => XdgResizeEdge::BottomRight,
-            ResizeDirection::South => XdgResizeEdge::Bottom,
-        }
-    }
 }
 
 // NOTE: Rust doesn't allow `From<Option<Theme>>`.

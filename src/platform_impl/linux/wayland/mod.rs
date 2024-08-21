@@ -20,6 +20,7 @@ mod seat;
 mod state;
 mod types;
 mod window;
+mod shell;
 
 #[derive(Debug)]
 pub enum WaylandError {
