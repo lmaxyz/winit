@@ -2,7 +2,6 @@
 
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use tracing::warn;
 
@@ -17,7 +16,6 @@ use sctk::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_de
 use sctk::reexports::protocols::wp::cursor_shape::v1::client::wp_cursor_shape_manager_v1::WpCursorShapeManagerV1;
 use sctk::reexports::protocols::wp::pointer_constraints::zv1::client::zwp_pointer_constraints_v1::{Lifetime, ZwpPointerConstraintsV1};
 use sctk::reexports::client::globals::{BindError, GlobalList};
-use sctk::reexports::csd_frame::FrameClick;
 
 use sctk::compositor::SurfaceData;
 use sctk::globals::GlobalData;
@@ -37,7 +35,7 @@ pub mod relative_pointer;
 impl PointerHandler for WinitState {
     fn pointer_frame(
         &mut self,
-        connection: &Connection,
+        _connection: &Connection,
         _: &QueueHandle<Self>,
         pointer: &WlPointer,
         events: &[PointerEvent],
@@ -87,40 +85,16 @@ impl PointerHandler for WinitState {
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. }
                     if parent_surface != surface =>
                 {
-                    if let Some(icon) = window.frame_point_moved(
-                        seat,
-                        surface,
-                        Duration::ZERO,
-                        event.position.0,
-                        event.position.1,
-                    ) {
-                        let _ = themed_pointer.set_cursor(connection, icon);
-                    }
+                    // Do something.
                 },
                 PointerEventKind::Leave { .. } if parent_surface != surface => {
-                    window.frame_point_left();
+                    // Do something.
                 },
-                ref kind @ PointerEventKind::Press { button, serial, time }
-                | ref kind @ PointerEventKind::Release { button, serial, time }
+                ref _kind @ PointerEventKind::Press { button: _, serial: _, time: _ }
+                | ref _kind @ PointerEventKind::Release { button: _, serial: _, time: _ }
                     if parent_surface != surface =>
-                {
-                    let click = match wayland_button_to_winit(button) {
-                        MouseButton::Left => FrameClick::Normal,
-                        MouseButton::Right => FrameClick::Alternate,
-                        _ => continue,
-                    };
-                    let pressed = matches!(kind, PointerEventKind::Press { .. });
-
-                    // Emulate click on the frame.
-                    window.frame_click(
-                        click,
-                        pressed,
-                        seat,
-                        serial,
-                        Duration::from_millis(time as u64),
-                        window_id,
-                        &mut self.window_compositor_updates,
-                    );
+                { 
+                    // Do something 
                 },
                 // Regular events on the main surface.
                 PointerEventKind::Enter { .. } => {

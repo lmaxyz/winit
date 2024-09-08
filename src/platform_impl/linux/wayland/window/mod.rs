@@ -609,13 +609,14 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_theme(&self, theme: Option<Theme>) {
-        self.window_state.lock().unwrap().set_theme(theme)
+    pub fn set_theme(&self, _theme: Option<Theme>) {
+        // self.window_state.lock().unwrap().set_theme(theme)
     }
 
     #[inline]
     pub fn theme(&self) -> Option<Theme> {
-        self.window_state.lock().unwrap().theme()
+        // self.window_state.lock().unwrap().theme()
+        None
     }
 
     pub fn set_content_protected(&self, _protected: bool) {}
