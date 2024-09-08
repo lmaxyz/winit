@@ -117,9 +117,6 @@ pub struct WindowState {
     /// The inner size of the window, as in without client side decorations.
     size: LogicalSize<u32>,
 
-    /// Whether the CSD fail to create, so we don't try to create them on each iteration.
-    csd_fails: bool,
-
     /// Whether we should decorate the frame.
     decorate: bool,
 
@@ -192,7 +189,6 @@ impl WindowState {
             blur_manager: winit_state.kwin_blur_manager.clone(),
             compositor,
             connection,
-            csd_fails: false,
             cursor_grab_mode: GrabState::new(),
             selected_cursor: Default::default(),
             cursor_visible: true,
@@ -268,8 +264,8 @@ impl WindowState {
     pub fn configure(
         &mut self,
         configure: WindowConfigure,
-        shm: &Shm,
-        subcompositor: &Option<Arc<SubcompositorState>>,
+        _shm: &Shm,
+        _subcompositor: &Option<Arc<SubcompositorState>>,
     ) -> bool {
         // NOTE: when using fractional scaling or wl_compositor@v6 the scaling
         // should be delivered before the first configure, thus apply it to
@@ -279,56 +275,15 @@ impl WindowState {
             self.stateless_size = self.size;
         }
 
-        if let Some(subcompositor) = subcompositor.as_ref().filter(|_| self.frame.is_none() && !self.csd_fails) {
-            match WinitFrame::new(
-                &self.window,
-                shm,
-                #[cfg(feature = "sctk-adwaita")]
-                self.compositor.clone(),
-                subcompositor.clone(),
-                self.queue_handle.clone(),
-                #[cfg(feature = "sctk-adwaita")]
-                into_sctk_adwaita_config(self.theme),
-            ) {
-                Ok(mut frame) => {
-                    frame.set_title(&self.title);
-                    frame.set_scaling_factor(self.scale_factor);
-                    // Hide the frame if we were asked to not decorate.
-                    frame.set_hidden(!self.decorate);
-                    self.frame = Some(frame);
-                },
-                Err(err) => {
-                    warn!("Failed to create client side decorations frame: {err}");
-                    self.csd_fails = true;
-                },
-            }
-        } else {
-            // Drop the frame for server side decorations to save resources.
-            self.frame = None;
-        }
+        // Drop the frame for server side decorations to save resources.
+        self.frame = None;
 
         let stateless = Self::is_stateless(&configure);
 
-        let (mut new_size, constrain) = if let Some(frame) = self.frame.as_mut() {
-            // Configure the window states.
-            frame.update_state(configure.state);
-
-            match configure.new_size {
-                (Some(width), Some(height)) => {
-                    let (width, height) = frame.subtract_borders(width, height);
-                    let width = width.map(|w| w.get()).unwrap_or(1);
-                    let height = height.map(|h| h.get()).unwrap_or(1);
-                    ((width, height).into(), false)
-                },
-                (..) if stateless => (self.stateless_size, true),
-                _ => (self.size, true),
-            }
-        } else {
-            match configure.new_size {
-                (Some(width), Some(height)) => ((width.get(), height.get()).into(), false),
-                _ if stateless => (self.stateless_size, true),
-                _ => (self.size, true),
-            }
+        let (mut new_size, constrain) = match configure.new_size {
+            (Some(width), Some(height)) => ((width.get(), height.get()).into(), false),
+            _ if stateless => (self.stateless_size, true),
+            _ => (self.size, true),
         };
 
         // Apply configure bounds only when compositor let the user decide what size to pick.
