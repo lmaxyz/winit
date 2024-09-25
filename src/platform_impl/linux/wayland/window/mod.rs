@@ -80,7 +80,10 @@ impl Window {
         
         let display = event_loop_window_target.connection.display();
 
-        let size: Size = attributes.inner_size.unwrap_or(LogicalSize::new(800., 600.).into());
+        let size: Size = attributes.inner_size.unwrap_or(match state.monitors.lock().unwrap().iter().next() {
+            Some(mh) => mh.size().into(),
+            None => LogicalSize::new(800., 600.).into()
+        }).into();
 
         let wl_shell_window = state.shell.create_window(surface.clone(), &queue_handle);
 
@@ -261,31 +264,35 @@ impl Window {
     }
 
     #[inline]
-    pub fn request_inner_size(&self, size: Size) -> Option<PhysicalSize<u32>> {
-        let mut window_state = self.window_state.lock().unwrap();
-        let new_size = window_state.request_inner_size(size);
-        self.request_redraw();
-        Some(new_size)
+    pub fn request_inner_size(&self, _size: Size) -> Option<PhysicalSize<u32>> {
+        // println!("Ignored Request inner size: {:#?}", size);
+        // let mut window_state = self.window_state.lock().unwrap();
+        // let new_size = window_state.request_inner_size(size);
+        // self.request_redraw();
+        // println!("request_inner_size: {:#?}", size);
+        Some(self.inner_size())
     }
 
     /// Set the minimum inner size for the window.
     #[inline]
-    pub fn set_min_inner_size(&self, min_size: Option<Size>) {
-        let scale_factor = self.scale_factor();
-        let min_size = min_size.map(|size| size.to_logical(scale_factor));
-        self.window_state.lock().unwrap().set_min_inner_size(min_size);
-        // NOTE: Requires commit to be applied.
-        self.request_redraw();
+    pub fn set_min_inner_size(&self, _min_size: Option<Size>) {
+        // println!("Ignored set_min_inner_size: {:#?}", min_size);
+        // let scale_factor = self.scale_factor();
+        // let min_size = min_size.map(|size| size.to_logical(scale_factor));
+        // self.window_state.lock().unwrap().set_min_inner_size(min_size);
+        // // NOTE: Requires commit to be applied.
+        // self.request_redraw();
     }
 
     /// Set the maximum inner size for the window.
     #[inline]
-    pub fn set_max_inner_size(&self, max_size: Option<Size>) {
-        let scale_factor = self.scale_factor();
-        let max_size = max_size.map(|size| size.to_logical(scale_factor));
-        self.window_state.lock().unwrap().set_max_inner_size(max_size);
-        // NOTE: Requires commit to be applied.
-        self.request_redraw();
+    pub fn set_max_inner_size(&self, _max_size: Option<Size>) {
+        // println!("Ignored set_max_inner_size: {:#?}", max_size);
+        // let scale_factor = self.scale_factor();
+        // let max_size = max_size.map(|size| size.to_logical(scale_factor));
+        // self.window_state.lock().unwrap().set_max_inner_size(max_size);
+        // // NOTE: Requires commit to be applied.
+        // self.request_redraw();
     }
 
     #[inline]
@@ -327,16 +334,16 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_resizable(&self, resizable: bool) {
-        if self.window_state.lock().unwrap().set_resizable(resizable) {
-            // NOTE: Requires commit to be applied.
-            self.request_redraw();
-        }
+    pub fn set_resizable(&self, _resizable: bool) {
+        // if self.window_state.lock().unwrap().set_resizable(resizable) {
+        //     // NOTE: Requires commit to be applied.
+        //     self.request_redraw();
+        // }
     }
 
     #[inline]
     pub fn is_resizable(&self) -> bool {
-        self.window_state.lock().unwrap().resizable()
+        false
     }
 
     #[inline]
@@ -356,13 +363,13 @@ impl Window {
     }
 
     #[inline]
-    pub fn set_blur(&self, blur: bool) {
-        self.window_state.lock().unwrap().set_blur(blur);
+    pub fn set_blur(&self, _blur: bool) {
+        // self.window_state.lock().unwrap().set_blur(blur);
     }
 
     #[inline]
-    pub fn set_decorations(&self, decorate: bool) {
-        self.window_state.lock().unwrap().set_decorate(decorate)
+    pub fn set_decorations(&self, _decorate: bool) {
+        // self.window_state.lock().unwrap().set_decorate(decorate)
     }
 
     #[inline]
