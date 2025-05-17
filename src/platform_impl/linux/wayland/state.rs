@@ -268,6 +268,18 @@ impl WindowHandler for WinitState {
         Self::queue_close(&mut self.window_compositor_updates, window_id);
     }
 
+    fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface) {
+        let window_id = super::make_wid(wl_surface);
+        self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
+        self.windows
+            .get_mut()
+            .get_mut(&window_id)
+            .expect("got configure for dead window.")
+            .lock()
+            .unwrap()
+            .set_focused(focused);
+    }
+
     fn configure(
         &mut self,
         _conn: &Connection,
@@ -279,7 +291,7 @@ impl WindowHandler for WinitState {
 
         let pos = if let Some(pos) =
             self.window_compositor_updates.iter().position(|update| update.window_id == window_id)
-        {   
+        {
             pos
         } else {
             self.window_compositor_updates.push(WindowCompositorUpdate::new(window_id));

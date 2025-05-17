@@ -38,6 +38,7 @@ pub trait WindowHandler: Sized {
     );
 
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, wl_surface: &WlSurface);
+    fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface);
 }
 
 #[derive(Debug)]
@@ -64,7 +65,7 @@ impl Window {
     pub fn set_maximized(&self) {
         self.0.wl_shell_surface.set_maximized(None)
     }
-    
+
     pub fn set_top_level(&self) {
         self.0.wl_shell_surface.set_toplevel()
     }

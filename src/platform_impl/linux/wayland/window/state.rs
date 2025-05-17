@@ -129,7 +129,7 @@ pub struct WindowState {
 
     /// The underlying WlShell window.
     pub window: WlShellWindow,
-
+    has_focus: bool,
     // QtExtendedSurface global, provides close event
     _extended_surface: Option<QtExtendedSurface>
 }
@@ -190,6 +190,7 @@ impl WindowState {
             transparent: false,
             viewport,
             window,
+            has_focus: false,
             _extended_surface: extended_surface
         }
     }
@@ -361,10 +362,14 @@ impl WindowState {
         true
     }
 
+    pub fn set_focused(&mut self, focused: bool) {
+        self.has_focus = focused;
+    }
+
     /// Whether the window is focused by any seat.
     #[inline]
     pub fn has_focus(&self) -> bool {
-        !self.seat_focus.is_empty()
+        self.has_focus
     }
 
     /// Whether the IME is allowed.

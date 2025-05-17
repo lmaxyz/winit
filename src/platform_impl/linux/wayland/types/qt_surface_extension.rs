@@ -22,7 +22,7 @@ pub struct SurfaceExtension {
 }
 
 impl SurfaceExtension {
-    pub fn new<State>(globals: &GlobalList, queue_handle: &QueueHandle<State>) -> Result<Self, BindError> 
+    pub fn new<State>(globals: &GlobalList, queue_handle: &QueueHandle<State>) -> Result<Self, BindError>
     where
         State: Dispatch<QtSurfaceExtension, GlobalData, State>  + 'static {
         let surface_extension = globals.bind(queue_handle, 1..=1, GlobalData)?;
@@ -33,7 +33,6 @@ impl SurfaceExtension {
     where
         State: Dispatch<QtExtendedSurface, SurfaceData, State>  + 'static
     {
-        
         self.surface_extension.get_extended_surface(surface, queue_handle, SurfaceData(surface.clone()))
     }
 }
@@ -70,14 +69,15 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
     ) {
         match event {
             ExtendedSurfaceEvent::Close => {
-                debug!("CLOSE EVENT!!!");
+                debug!("QtSurfaceExtension CLOSE EVENT");
                 state.request_close(conn, qh, &data.0);
             }
             ExtendedSurfaceEvent::OnscreenVisibility { visible } => {
-                debug!("VISIBLE EVENT: {}", visible);
+                debug!("QtSurfaceExtension VISIBLE EVENT: {}", visible);
+                state.set_window_focused(visible == 5, &data.0);
             },
             ExtendedSurfaceEvent::SetGenericProperty { name: _, value: _ } => {
-                debug!("SetGenericProperty EVENT!!!");
+                debug!("QtSurfaceExtension SetGenericProperty EVENT");
             },
             _ => unreachable!(),
         }

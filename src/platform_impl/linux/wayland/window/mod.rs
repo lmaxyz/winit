@@ -77,7 +77,7 @@ impl Window {
 
         let surface = state.compositor_state.create_surface(&queue_handle);
         let compositor = state.compositor_state.clone();
-        
+
         let display = event_loop_window_target.connection.display();
 
         let size: Size = attributes.inner_size.unwrap_or(match state.monitors.lock().unwrap().iter().next() {
@@ -374,7 +374,8 @@ impl Window {
 
     #[inline]
     pub fn is_decorated(&self) -> bool {
-        self.window_state.lock().unwrap().is_decorated()
+        // Window is decorated by lipstick on Aurora OS
+        true
     }
 
     #[inline]
