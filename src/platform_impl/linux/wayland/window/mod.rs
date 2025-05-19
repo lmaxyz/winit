@@ -94,6 +94,7 @@ impl Window {
             size,
             wl_shell_window.clone(),
             attributes.preferred_theme,
+            event_loop_window_target.event_loop_awakener.clone(),
         );
 
         // Set transparency hint.

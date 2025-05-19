@@ -21,6 +21,7 @@ mod state;
 mod types;
 mod window;
 mod shell;
+mod maliit_ime;
 
 #[derive(Debug)]
 pub enum WaylandError {
