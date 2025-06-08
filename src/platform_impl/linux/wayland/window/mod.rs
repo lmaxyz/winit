@@ -80,10 +80,12 @@ impl Window {
 
         let display = event_loop_window_target.connection.display();
 
-        let size: Size = attributes.inner_size.unwrap_or(match state.monitors.lock().unwrap().iter().next() {
+        let monitor_size = match state.monitors.lock().unwrap().iter().next() {
             Some(mh) => mh.size().into(),
             None => LogicalSize::new(800., 600.).into()
-        }).into();
+        };
+
+        let size: Size = attributes.inner_size.unwrap_or(monitor_size).into();
 
         let wl_shell_window = state.shell.create_window(surface.clone(), &queue_handle);
 
@@ -136,9 +138,13 @@ impl Window {
                     PlatformMonitorHandle::X(_) => None,
                 });
 
-                wl_shell_window.set_fullscreen(output.as_ref())
+                wl_shell_window.set_fullscreen(output.as_ref());
+                window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
             },
-            _ if attributes.maximized => wl_shell_window.set_maximized(),
+            _ if attributes.maximized => {
+                wl_shell_window.set_maximized();
+                window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
+            },
             _ => (),
         };
 
