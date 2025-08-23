@@ -1,5 +1,7 @@
 //! The Wayland window.
 
+use std::ffi::c_void;
+use std::ptr::NonNull;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -8,23 +10,25 @@ use sctk::compositor::{CompositorState, Region, SurfaceData};
 use sctk::reexports::client::protocol::wl_display::WlDisplay;
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::{Proxy, QueueHandle};
+use sctk::reexports::protocols::xdg::activation::v1::client::xdg_activation_v1::XdgActivationV1;
+use sctk::shell::xdg::window::{Window as SctkWindow, WindowDecorations};
 use sctk::shell::WaylandSurface;
 use tracing::warn;
 use winit_core::cursor::Cursor;
 use winit_core::error::{NotSupportedError, RequestError};
 use winit_core::event::{Ime, WindowEvent};
 use winit_core::event_loop::AsyncRequestSerial;
-use winit_core::monitor::{Fullscreen, MonitorHandle as CoreMonitorHandle, MonitorHandleProvider};
+use winit_core::monitor::{Fullscreen, MonitorHandle as CoreMonitorHandle};
 use winit_core::window::{
     CursorGrabMode, ImeCapabilities, ImeRequest, ImeRequestError, ResizeDirection, Theme,
     UserAttentionType, Window as CoreWindow, WindowAttributes, WindowButtons, WindowId,
     WindowLevel,
 };
 
-use crate::shell::wl_shell::window::Window as WlShellWindow;
 use super::event_loop::sink::EventSink;
 use super::output::MonitorHandle;
 use super::state::WinitState;
+use super::types::xdg_activation::XdgActivationTokenData;
 use super::ActiveEventLoop;
 use crate::{output, WindowAttributesWayland};
 
@@ -36,7 +40,7 @@ pub use state::WindowState;
 #[derive(Debug)]
 pub struct Window {
     /// Reference to the underlying SCTK window.
-    window: WlShellWindow,
+    window: SctkWindow,
 
     /// Window id.
     window_id: WindowId,
@@ -51,8 +55,14 @@ pub struct Window {
     #[allow(dead_code)]
     display: WlDisplay,
 
+    /// Xdg activation to request user attention.
+    xdg_activation: Option<XdgActivationV1>,
+
+    /// The state of the requested attention from the `xdg_activation`.
+    attention_requested: Arc<AtomicBool>,
+
     /// Handle to the main queue to perform requests.
-    _queue_handle: QueueHandle<WinitState>,
+    queue_handle: QueueHandle<WinitState>,
 
     /// Window requests to the event loop.
     window_requests: Arc<WindowRequests>,
@@ -79,25 +89,30 @@ impl Window {
 
         let surface = state.compositor_state.create_surface(&queue_handle);
         let compositor = state.compositor_state.clone();
+        let xdg_activation =
+            state.xdg_activation.as_ref().map(|activation_state| activation_state.global().clone());
         let display = event_loop_window_target.handle.connection.display();
 
-        let monitor_size = match state.monitors.lock().unwrap().iter().next() {
-            Some(mh) => mh.current_video_mode().unwrap().size().into(),
-            None => LogicalSize::new(800., 600.).into()
+        let size: Size = attributes.surface_size.unwrap_or(LogicalSize::new(800., 600.).into());
+
+        // We prefer server side decorations, however to not have decorations we ask for client
+        // side decorations instead.
+        let default_decorations = if attributes.decorations {
+            WindowDecorations::RequestServer
+        } else {
+            WindowDecorations::RequestClient
         };
 
-        let size: Size = attributes.surface_size.unwrap_or(monitor_size);
-
-        let wl_shell_window = state.shell.create_window(surface.clone(), &queue_handle);
+        let window =
+            state.xdg_shell.create_window(surface.clone(), default_decorations, &queue_handle);
 
         let mut window_state = WindowState::new(
             event_loop_window_target.handle.clone(),
             &event_loop_window_target.queue_handle,
             &state,
             size,
-            wl_shell_window.clone(),
+            window.clone(),
             attributes.preferred_theme,
-            event_loop_window_target.event_loop_awakener.clone(),
         );
 
         window_state.set_window_icon(attributes.window_icon);
@@ -110,7 +125,7 @@ impl Window {
         // Set the decorations hint.
         window_state.set_decorate(attributes.decorations);
 
-        let (app_name, _activation_token) =
+        let (app_name, activation_token) =
             match attributes.platform.take().and_then(|p| p.cast::<WindowAttributesWayland>().ok())
             {
                 Some(attrs) => (attrs.name, attrs.activation_token),
@@ -119,7 +134,7 @@ impl Window {
 
         // Set the app_id.
         if let Some(name) = app_name.map(|name| name.general) {
-            wl_shell_window.set_app_id(name);
+            window.set_app_id(name);
         }
 
         // Set the window title.
@@ -145,9 +160,9 @@ impl Window {
                     monitor.cast_ref::<output::MonitorHandle>().map(|handle| &handle.proxy)
                 });
 
-                wl_shell_window.set_fullscreen(output);
+                window.set_fullscreen(output)
             },
-            _ if attributes.maximized => wl_shell_window.set_maximized(),
+            _ if attributes.maximized => window.set_maximized(),
             _ => (),
         };
 
@@ -156,8 +171,13 @@ impl Window {
             Cursor::Custom(cursor) => window_state.set_custom_cursor(cursor),
         }
 
+        // Activate the window when the token is passed.
+        if let (Some(xdg_activation), Some(token)) = (xdg_activation.as_ref(), activation_token) {
+            xdg_activation.activate(token.into_raw(), &surface);
+        }
+
         // XXX Do initial commit.
-        wl_shell_window.commit();
+        window.commit();
 
         // Add the window and window requests into the state.
         let window_state = Arc::new(Mutex::new(window_state));
@@ -178,30 +198,53 @@ impl Window {
         let event_queue = wayland_source.queue();
 
         // Do a roundtrip.
-        event_queue.roundtrip(&mut state).map_err(|error| os_error!(error))?;
+        event_queue.roundtrip(&mut state).map_err(|err| os_error!(err))?;
+
+        // XXX Wait for the initial configure to arrive.
+        while !window_state.lock().unwrap().is_configured() {
+            event_queue.blocking_dispatch(&mut state).map_err(|err| os_error!(err))?;
+        }
 
         // Wake-up event loop, so it'll send initial redraw requested.
         let event_loop_awakener = event_loop_window_target.event_loop_awakener.clone();
         event_loop_awakener.ping();
 
         Ok(Self {
-            window: wl_shell_window,
+            window,
             display,
             monitors,
             window_id,
             compositor,
             window_state,
-            _queue_handle: queue_handle,
+            queue_handle,
+            xdg_activation,
+            attention_requested: Arc::new(AtomicBool::new(false)),
             event_loop_awakener,
             window_requests,
             window_events_sink,
         })
     }
+
+    pub(crate) fn xdg_toplevel(&self) -> Option<NonNull<c_void>> {
+        NonNull::new(self.window.xdg_toplevel().id().as_ptr().cast())
+    }
 }
 
 impl Window {
     pub fn request_activation_token(&self) -> Result<AsyncRequestSerial, RequestError> {
-        Err(NotSupportedError::new("xdg protocols are not supported on Aurora OS").into())
+        let xdg_activation = match self.xdg_activation.as_ref() {
+            Some(xdg_activation) => xdg_activation,
+            None => return Err(NotSupportedError::new("xdg_activation_v1 is not available").into()),
+        };
+
+        let serial = AsyncRequestSerial::get();
+
+        let data = XdgActivationTokenData::Obtain((self.window_id, serial));
+        let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
+        xdg_activation_token.set_surface(self.surface());
+        xdg_activation_token.commit();
+
+        Ok(serial)
     }
 
     #[inline]
@@ -282,7 +325,7 @@ impl CoreWindow for Window {
     }
 
     fn set_outer_position(&self, _position: Position) {
-        // Not possible on Wayland.
+        // Not possible.
     }
 
     fn surface_size(&self) -> PhysicalSize<u32> {
@@ -308,24 +351,22 @@ impl CoreWindow for Window {
         PhysicalInsets::new(0, 0, 0, 0)
     }
 
-    fn set_min_surface_size(&self, _min_size: Option<Size>) {
-        // println!("Ignored set_min_surface_size: {:#?}", min_size);
-        // let scale_factor = self.scale_factor();
-        // let min_size = min_size.map(|size| size.to_logical(scale_factor));
-        // self.window_state.lock().unwrap().set_min_surface_size(min_size);
-        // // NOTE: Requires commit to be applied.
-        // self.request_redraw();
+    fn set_min_surface_size(&self, min_size: Option<Size>) {
+        let scale_factor = self.scale_factor();
+        let min_size = min_size.map(|size| size.to_logical(scale_factor));
+        self.window_state.lock().unwrap().set_min_surface_size(min_size);
+        // NOTE: Requires commit to be applied.
+        self.request_redraw();
     }
 
     /// Set the maximum surface size for the window.
     #[inline]
-    fn set_max_surface_size(&self, _max_size: Option<Size>) {
-        // println!("Ignored set_max_surface_size: {:#?}", max_size);
-        // let scale_factor = self.scale_factor();
-        // let max_size = max_size.map(|size| size.to_logical(scale_factor));
-        // self.window_state.lock().unwrap().set_max_surface_size(max_size);
-        // // NOTE: Requires commit to be applied.
-        // self.request_redraw();
+    fn set_max_surface_size(&self, max_size: Option<Size>) {
+        let scale_factor = self.scale_factor();
+        let max_size = max_size.map(|size| size.to_logical(scale_factor));
+        self.window_state.lock().unwrap().set_max_surface_size(max_size);
+        // NOTE: Requires commit to be applied.
+        self.request_redraw();
     }
 
     fn surface_resize_increments(&self) -> Option<PhysicalSize<u32>> {
@@ -354,16 +395,15 @@ impl CoreWindow for Window {
         None
     }
 
-    fn set_resizable(&self, _resizable: bool) {
-        // if self.window_state.lock().unwrap().set_resizable(resizable) {
-        //     // NOTE: Requires commit to be applied.
-        //     self.request_redraw();
-        // }
+    fn set_resizable(&self, resizable: bool) {
+        if self.window_state.lock().unwrap().set_resizable(resizable) {
+            // NOTE: Requires commit to be applied.
+            self.request_redraw();
+        }
     }
 
     fn is_resizable(&self) -> bool {
-        // Resizing is not support on Aurora OS
-        false
+        self.window_state.lock().unwrap().resizable()
     }
 
     fn set_enabled_buttons(&self, _buttons: WindowButtons) {
@@ -382,8 +422,7 @@ impl CoreWindow for Window {
             return;
         }
 
-        // self.window.set_minimized();
-        warn!("Minimizing is ignored on wl_shell.");
+        self.window.set_minimized();
     }
 
     fn is_minimized(&self) -> Option<bool> {
@@ -395,7 +434,7 @@ impl CoreWindow for Window {
         if maximized {
             self.window.set_maximized()
         } else {
-            self.window.set_top_level()
+            self.window.unset_maximized()
         }
     }
 
@@ -421,7 +460,7 @@ impl CoreWindow for Window {
 
                 self.window.set_fullscreen(output)
             },
-            None => self.window.set_top_level(),
+            None => self.window.unset_fullscreen(),
         }
     }
 
@@ -449,19 +488,18 @@ impl CoreWindow for Window {
     }
 
     #[inline]
-    fn set_blur(&self, _blur: bool) {
-        // self.window_state.lock().unwrap().set_blur(blur);
+    fn set_blur(&self, blur: bool) {
+        self.window_state.lock().unwrap().set_blur(blur);
     }
 
     #[inline]
-    fn set_decorations(&self, _decorate: bool) {
-        // self.window_state.lock().unwrap().set_decorate(decorate)
+    fn set_decorations(&self, decorate: bool) {
+        self.window_state.lock().unwrap().set_decorate(decorate)
     }
 
     #[inline]
     fn is_decorated(&self) -> bool {
-        // Window is decorated by lipstick on Aurora OS
-        true
+        self.window_state.lock().unwrap().is_decorated()
     }
 
     fn set_window_level(&self, _level: WindowLevel) {}
@@ -494,16 +532,38 @@ impl CoreWindow for Window {
         self.window_state.lock().unwrap().has_focus()
     }
 
-    fn request_user_attention(&self, _request_type: Option<UserAttentionType>) {
-        warn!("`request_user_attention` isn't supported");
+    fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
+        let xdg_activation = match self.xdg_activation.as_ref() {
+            Some(xdg_activation) => xdg_activation,
+            None => {
+                warn!("`request_user_attention` isn't supported");
+                return;
+            },
+        };
+
+        // Urgency is only removed by the compositor and there's no need to raise urgency when it
+        // was already raised.
+        if request_type.is_none() || self.attention_requested.load(Ordering::Relaxed) {
+            return;
+        }
+
+        self.attention_requested.store(true, Ordering::Relaxed);
+        let surface = self.surface().clone();
+        let data = XdgActivationTokenData::Attention((
+            surface.clone(),
+            Arc::downgrade(&self.attention_requested),
+        ));
+        let xdg_activation_token = xdg_activation.get_activation_token(&self.queue_handle, data);
+        xdg_activation_token.set_surface(&surface);
+        xdg_activation_token.commit();
+    }
+
+    fn set_theme(&self, theme: Option<Theme>) {
+        self.window_state.lock().unwrap().set_theme(theme)
     }
 
     fn theme(&self) -> Option<Theme> {
         self.window_state.lock().unwrap().theme()
-    }
-
-    fn set_theme(&self, _theme: Option<Theme>) {
-        // self.window_state.lock().unwrap().set_theme(theme)
     }
 
     fn set_content_protected(&self, _protected: bool) {}

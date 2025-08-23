@@ -13,6 +13,9 @@
 //! * `wayland-csd-adwaita` (default).
 //! * `wayland-csd-adwaita-crossfont`.
 //! * `wayland-csd-adwaita-notitle`.
+use std::ffi::c_void;
+use std::ptr::NonNull;
+
 use dpi::{LogicalSize, PhysicalSize};
 use sctk::reexports::client::protocol::wl_surface::WlSurface;
 use sctk::reexports::client::Proxy;
@@ -20,7 +23,7 @@ use sctk::shm::slot::{Buffer, CreateBufferError, SlotPool};
 use wayland_client::protocol::wl_shm::Format;
 use winit_core::event_loop::ActiveEventLoop as CoreActiveEventLoop;
 use winit_core::window::{
-    ActivationToken, PlatformWindowAttributes, WindowId,
+    ActivationToken, PlatformWindowAttributes, Window as CoreWindow, WindowId,
 };
 
 macro_rules! os_error {
@@ -35,8 +38,6 @@ mod seat;
 mod state;
 mod types;
 mod window;
-mod shell;
-mod maliit_ime;
 
 pub use self::event_loop::{ActiveEventLoop, EventLoop};
 pub use self::window::Window;
@@ -75,17 +76,17 @@ pub trait EventLoopBuilderExtWayland {
 /// Additional methods on [`Window`] that are specific to Wayland.
 ///
 /// [`Window`]: crate::window::Window
-// pub trait WindowExtWayland {
-//     /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
-//     fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
-// }
+pub trait WindowExtWayland {
+    /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
+    fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
+}
 
-// impl WindowExtWayland for dyn CoreWindow + '_ {
-//     #[inline]
-//     fn xdg_toplevel(&self) -> Option<NonNull<c_void>> {
-//         self.cast_ref::<Window>()?.xdg_toplevel()
-//     }
-// }
+impl WindowExtWayland for dyn CoreWindow + '_ {
+    #[inline]
+    fn xdg_toplevel(&self) -> Option<NonNull<c_void>> {
+        self.cast_ref::<Window>()?.xdg_toplevel()
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ApplicationName {

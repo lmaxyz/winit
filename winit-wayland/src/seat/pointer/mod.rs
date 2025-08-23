@@ -2,6 +2,7 @@
 
 use std::ops::Deref;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use tracing::warn;
 
@@ -40,7 +41,7 @@ pub mod relative_pointer;
 impl PointerHandler for WinitState {
     fn pointer_frame(
         &mut self,
-        _connection: &Connection,
+        connection: &Connection,
         _: &QueueHandle<Self>,
         pointer: &WlPointer,
         events: &[PointerEvent],
@@ -88,40 +89,40 @@ impl PointerHandler for WinitState {
                 PointerEventKind::Enter { .. } | PointerEventKind::Motion { .. }
                     if parent_surface != surface =>
                 {
-                    // if let Some(icon) = window.frame_point_moved(
-                    //     seat,
-                    //     surface,
-                    //     Duration::ZERO,
-                    //     event.position.0,
-                    //     event.position.1,
-                    // ) {
-                    //     let _ = themed_pointer.set_cursor(connection, icon);
-                    // }
+                    if let Some(icon) = window.frame_point_moved(
+                        seat,
+                        surface,
+                        Duration::ZERO,
+                        event.position.0,
+                        event.position.1,
+                    ) {
+                        let _ = themed_pointer.set_cursor(connection, icon);
+                    }
                 },
                 PointerEventKind::Leave { .. } if parent_surface != surface => {
-                    // window.frame_point_left();
+                    window.frame_point_left();
                 },
-                ref kind @ PointerEventKind::Press { button, serial: _, time: _ }
-                | ref kind @ PointerEventKind::Release { button, serial: _, time: _ }
+                ref kind @ PointerEventKind::Press { button, serial, time }
+                | ref kind @ PointerEventKind::Release { button, serial, time }
                     if parent_surface != surface =>
                 {
-                    let _click = match wayland_button_to_winit(button) {
+                    let click = match wayland_button_to_winit(button) {
                         MouseButton::Left => FrameClick::Normal,
                         MouseButton::Right => FrameClick::Alternate,
                         _ => continue,
                     };
-                    let _pressed = matches!(kind, PointerEventKind::Press { .. });
+                    let pressed = matches!(kind, PointerEventKind::Press { .. });
 
                     // Emulate click on the frame.
-                    // window.frame_click(
-                    //     click,
-                    //     pressed,
-                    //     seat,
-                    //     serial,
-                    //     Duration::from_millis(time as u64),
-                    //     window_id,
-                    //     &mut self.window_compositor_updates,
-                    // );
+                    window.frame_click(
+                        click,
+                        pressed,
+                        seat,
+                        serial,
+                        Duration::from_millis(time as u64),
+                        window_id,
+                        &mut self.window_compositor_updates,
+                    );
                 },
                 // Regular events on the main surface.
                 PointerEventKind::Enter { .. } => {
