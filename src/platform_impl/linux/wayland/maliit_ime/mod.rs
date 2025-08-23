@@ -29,8 +29,8 @@ impl MaliitInputMethod {
         if !self.is_events_handling_enabled.load(Ordering::Relaxed) {
             {
                 let mut im = self.input_method.lock().unwrap();
-                im.show();
                 im.reset();
+                im.show();
             }
             self.start_events_handling();
         }
@@ -61,7 +61,7 @@ impl MaliitInputMethod {
                                 if txt.chars().count() == 1 {
                                     events_sink.push_window_event(kb_input_event_from_str(&txt), window_id);
                                 } else {
-                                    let preedit_event = WindowEvent::Ime(crate::event::Ime::Preedit((&txt).into(), Some((1, 1))));
+                                    let preedit_event = WindowEvent::Ime(crate::event::Ime::Preedit((&txt).into(), Some((0, 1))));
                                     let commit_event = WindowEvent::Ime(crate::event::Ime::Commit(txt.into()));
                                     events_sink.push_window_event(preedit_event, window_id);
                                     events_sink.push_window_event(commit_event, window_id);
