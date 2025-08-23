@@ -58,6 +58,7 @@ wayland-csd-adwaita = ["winit-wayland/csd-adwaita"]
 wayland-csd-adwaita-crossfont = ["winit-wayland/csd-adwaita-crossfont"]
 wayland-csd-adwaita-notitle = ["winit-wayland/csd-adwaita-notitle"]
 wayland-dlopen = ["winit-wayland/dlopen"]
+wayland-legacy = ["winit-wayland-legacy"]
 x11 = ["dep:winit-x11"]
 
 [build-dependencies]
@@ -99,6 +100,7 @@ libc.workspace = true
 rustix = { workspace = true, features = ["std", "thread"] }
 winit-common = { workspace = true, features = ["xkb"] }
 winit-wayland = { workspace = true, optional = true, default-features = false }
+winit-wayland-legacy = { workspace = true, optional = true, default-features = false }
 winit-x11 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "redox")'.dependencies]

@@ -1,7 +1,7 @@
 #![cfg(free_unix)]
 
-#[cfg(all(not(x11_platform), not(wayland_platform)))]
-compile_error!("Please select a feature to build for unix: `x11`, `wayland`");
+#[cfg(all(not(x11_platform), not(wayland_platform), not(wayland_legacy_platform)))]
+compile_error!("Please select a feature to build for unix: `x11`, `wayland`, `wayland_legacy`");
 
 use std::env;
 use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, RawFd};
@@ -14,6 +14,8 @@ use winit_core::event_loop::pump_events::PumpStatus;
 use winit_core::event_loop::ActiveEventLoop;
 #[cfg(wayland_platform)]
 pub(crate) use winit_wayland as wayland;
+#[cfg(wayland_legacy_platform)]
+pub(crate) use winit_wayland_legacy as wayland;
 #[cfg(x11_platform)]
 pub(crate) use winit_x11 as x11;
 
@@ -21,7 +23,7 @@ pub(crate) use winit_x11 as x11;
 pub(crate) enum Backend {
     #[cfg(x11_platform)]
     X,
-    #[cfg(wayland_platform)]
+    #[cfg(any(wayland_platform, wayland_legacy_platform))]
     Wayland,
 }
 
@@ -45,7 +47,7 @@ macro_rules! x11_or_wayland {
         match $what {
             #[cfg(x11_platform)]
             $enum::X($($c1)*) => $enum2::X($x),
-            #[cfg(wayland_platform)]
+            #[cfg(any(wayland_platform, wayland_legacy_platform))]
             $enum::Wayland($($c1)*) => $enum2::Wayland($x),
         }
     };
@@ -53,7 +55,7 @@ macro_rules! x11_or_wayland {
         match $what {
             #[cfg(x11_platform)]
             $enum::X($($c1)*) => $x,
-            #[cfg(wayland_platform)]
+            #[cfg(any(wayland_platform, wayland_legacy_platform))]
             $enum::Wayland($($c1)*) => $x,
         }
     };
@@ -62,7 +64,7 @@ macro_rules! x11_or_wayland {
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum EventLoop {
-    #[cfg(wayland_platform)]
+    #[cfg(any(wayland_platform, wayland_legacy_platform))]
     Wayland(Box<wayland::EventLoop>),
     #[cfg(x11_platform)]
     X(x11::EventLoop),
@@ -97,7 +99,7 @@ impl EventLoop {
             // User is forcing a backend.
             (Some(backend), ..) => backend,
             // Wayland is present.
-            #[cfg(wayland_platform)]
+            #[cfg(any(wayland_platform, wayland_legacy_platform))]
             (None, true, _) => Backend::Wayland,
             // X11 is present.
             #[cfg(x11_platform)]
@@ -119,14 +121,14 @@ impl EventLoop {
 
         // Create the display based on the backend.
         match backend {
-            #[cfg(wayland_platform)]
+            #[cfg(any(wayland_platform, wayland_legacy_platform))]
             Backend::Wayland => EventLoop::new_wayland_any_thread(),
             #[cfg(x11_platform)]
             Backend::X => EventLoop::new_x11_any_thread(),
         }
     }
 
-    #[cfg(wayland_platform)]
+    #[cfg(any(wayland_platform, wayland_legacy_platform))]
     fn new_wayland_any_thread() -> Result<EventLoop, EventLoopError> {
         wayland::EventLoop::new().map(|evlp| EventLoop::Wayland(Box::new(evlp)))
     }
@@ -140,7 +142,7 @@ impl EventLoop {
     #[allow(dead_code)]
     pub fn is_wayland(&self) -> bool {
         match *self {
-            #[cfg(wayland_platform)]
+            #[cfg(any(wayland_platform, wayland_legacy_platform))]
             EventLoop::Wayland(_) => true,
             #[cfg(x11_platform)]
             _ => false,

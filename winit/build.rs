@@ -17,6 +17,7 @@ fn main() {
 
         // Native displays.
         x11_platform: { all(feature = "x11", free_unix, not(redox)) },
+        wayland_legacy_platform: { all(feature = "wayland-legacy", free_unix, not(redox)) },
         wayland_platform: { all(feature = "wayland", free_unix, not(redox)) },
         orbital_platform: { redox },
     }
