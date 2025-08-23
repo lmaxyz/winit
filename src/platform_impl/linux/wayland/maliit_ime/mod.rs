@@ -27,7 +27,11 @@ impl MaliitInputMethod {
 
     pub fn show(&mut self) {
         if !self.is_events_handling_enabled.load(Ordering::Relaxed) {
-            self.input_method.lock().unwrap().show();
+            {
+                let im = self.input_method.lock().unwrap();
+                im.show();
+                im.reset();
+            }
             self.start_events_handling();
         }
     }
