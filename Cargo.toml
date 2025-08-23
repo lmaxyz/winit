@@ -71,6 +71,7 @@ ahash = { version = "0.8.7", features = ["no-rng"] }
 bytemuck = { version = "1.13.1", default-features = false }
 calloop = "0.13.0"
 libc = "0.2.64"
+maliit = { git = "https://github.com/auroraos-rs/maliit", branch = "new_functional" }
 memmap2 = "0.9.0"
 percent-encoding = "2.0"
 rustix = { version = "1.0.7", default-features = false }

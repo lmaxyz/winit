@@ -1,9 +1,9 @@
 [package]
-description = "Winit's Wayland backend"
+description = "Winit's WlShell Wayland backend"
 documentation = "https://docs.rs/winit-wayland"
 edition.workspace = true
 license.workspace = true
-name = "winit-wayland"
+name = "winit-wayland-legacy"
 repository.workspace = true
 rust-version.workspace = true
 version.workspace = true
