@@ -271,13 +271,18 @@ impl WindowHandler for WinitState {
     fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface) {
         let window_id = super::make_wid(wl_surface);
         self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
-        self.windows
+
+        let mut window_state = self.windows
             .get_mut()
             .get_mut(&window_id)
             .expect("got configure for dead window.")
             .lock()
-            .unwrap()
-            .set_focused(focused);
+            .unwrap();
+
+        window_state.set_focused(focused);
+        if window_state.ime_allowed() && !focused {
+            window_state.set_ime_allowed(false);
+        }
     }
 
     fn configure(
