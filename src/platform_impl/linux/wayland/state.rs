@@ -338,6 +338,7 @@ impl OutputHandler for WinitState {
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
+        println!("Output updated");
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
@@ -364,6 +365,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: wayland_client::protocol::wl_output::Transform,
     ) {
+        println!("Transform changed")
         // TODO(kchibisov) we need to expose it somehow in winit.
     }
 

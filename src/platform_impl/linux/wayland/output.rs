@@ -1,11 +1,13 @@
-use sctk::reexports::client::protocol::wl_output::{Event as WlOutputEvent, WlOutput};
+use sctk::reexports::client::protocol::wl_output::{Event as WlOutputEvent, WlOutput, Transform};
 use sctk::reexports::client::{Connection, Dispatch, Proxy, QueueHandle, delegate_dispatch};
 
-use sctk::output::OutputData;
+use sctk::output::{OutputData, OutputHandler};
 
 use crate::dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
 use crate::platform_impl::platform::VideoModeHandle as PlatformVideoModeHandle;
+use crate::platform_impl::wayland::state::WinitState;
 use crate::platform_impl::wayland::window::WindowState;
+use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
 
 use super::event_loop::ActiveEventLoop;
 
@@ -106,6 +108,11 @@ impl MonitorHandle {
             })
         })
     }
+
+    pub fn transform(&self) -> Transform {
+        let output_data = self.proxy.data::<OutputData>().unwrap();
+        output_data.transform()
+    }
 }
 
 impl PartialEq for MonitorHandle {
@@ -164,29 +171,29 @@ impl VideoModeHandle {
 }
 
 
-impl<D> Dispatch<WlOutput, OutputData, D> for MonitorHandle
-    where D: Dispatch<WlOutput, OutputData> {
-    fn event(
-        state: &mut D,
-        _: &WlOutput,
-        event: WlOutputEvent,
-        _data: &OutputData,
-        _conn: &Connection,
-        _qhandle: &QueueHandle<D>,
-    ) {
-        match event {
-            WlOutputEvent::Geometry { x, y, physical_width, physical_height, subpixel, make, model, transform } => {
-                println!("Wl Output Geometry:");
-                println!("\tx: {}, y: {}", x, y);
-                println!("\twidth: {}, height: {}", physical_width, physical_height);
-                println!("\tsubpixel {:?}", subpixel);
-                println!("\tmake: {}, model: {}", make, model);
-                println!("\ttransform {:?}", transform);
-            }
-            _ => println!("Other wloutput event")
-        }
-        // Handle events related to the video mode handle
-    }
-}
+// impl<D> Dispatch<WlOutput, OutputData, D> for MonitorHandle
+//     where D: Dispatch<WlOutput, OutputData> + WindowHandler {
+//     fn event(
+//         state: &mut D,
+//         _: &WlOutput,
+//         event: WlOutputEvent,
+//         _data: &OutputData,
+//         _conn: &Connection,
+//         _qhandle: &QueueHandle<D>,
+//     ) {
+//         match event {
+//             WlOutputEvent::Geometry { x, y, physical_width, physical_height, subpixel, make, model, transform } => {
+//                 println!("Wl Output Geometry:");
+//                 println!("\tx: {}, y: {}", x, y);
+//                 println!("\twidth: {}, height: {}", physical_width, physical_height);
+//                 println!("\tsubpixel {:?}", subpixel);
+//                 println!("\tmake: {}, model: {}", make, model);
+//                 println!("\ttransform {:?}", transform);
+//             }
+//             _ => println!("Other wloutput event")
+//         }
+//         // Handle events related to the video mode handle
+//     }
+// }
 
-delegate_dispatch!(WindowState: [WlOutput: OutputData] => MonitorHandle);
+// delegate_dispatch!(WinitState: [WlOutput: OutputData] => MonitorHandle);
