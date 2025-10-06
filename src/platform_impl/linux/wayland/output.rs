@@ -1,10 +1,11 @@
-use sctk::reexports::client::protocol::wl_output::WlOutput;
-use sctk::reexports::client::Proxy;
+use sctk::reexports::client::protocol::wl_output::{Event as WlOutputEvent, WlOutput};
+use sctk::reexports::client::{Connection, Dispatch, Proxy, QueueHandle, delegate_dispatch};
 
 use sctk::output::OutputData;
 
 use crate::dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
 use crate::platform_impl::platform::VideoModeHandle as PlatformVideoModeHandle;
+use crate::platform_impl::wayland::window::WindowState;
 
 use super::event_loop::ActiveEventLoop;
 
@@ -161,3 +162,31 @@ impl VideoModeHandle {
         self.monitor.clone()
     }
 }
+
+
+impl<D> Dispatch<WlOutput, OutputData, D> for MonitorHandle
+    where D: Dispatch<WlOutput, OutputData> {
+    fn event(
+        state: &mut D,
+        _: &WlOutput,
+        event: WlOutputEvent,
+        _data: &OutputData,
+        _conn: &Connection,
+        _qhandle: &QueueHandle<D>,
+    ) {
+        match event {
+            WlOutputEvent::Geometry { x, y, physical_width, physical_height, subpixel, make, model, transform } => {
+                println!("Wl Output Geometry:");
+                println!("\tx: {}, y: {}", x, y);
+                println!("\twidth: {}, height: {}", physical_width, physical_height);
+                println!("\tsubpixel {:?}", subpixel);
+                println!("\tmake: {}, model: {}", make, model);
+                println!("\ttransform {:?}", transform);
+            }
+            _ => println!("Other wloutput event")
+        }
+        // Handle events related to the video mode handle
+    }
+}
+
+delegate_dispatch!(WindowState: [WlOutput: OutputData] => MonitorHandle);
