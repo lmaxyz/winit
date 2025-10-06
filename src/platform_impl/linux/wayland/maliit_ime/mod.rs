@@ -1,8 +1,9 @@
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock};
 use crate::event::{KeyEvent, WindowEvent};
 
 use super::{event_loop::sink::EventSink, DeviceId, WindowId};
 
+use dpi::LogicalSize;
 use maliit::input_method::InputMethod;
 
 
@@ -11,7 +12,8 @@ pub struct MaliitInputMethod {
     window_id: WindowId,
     events_sink: Arc<Mutex<EventSink>>,
     event_loop_awakener: calloop::ping::Ping,
-    is_events_handling_enabled: Arc<AtomicBool>
+    is_events_handling_enabled: Arc<AtomicBool>,
+    size: Arc<RwLock<LogicalSize<u32>>>
 }
 
 impl MaliitInputMethod {
@@ -22,6 +24,7 @@ impl MaliitInputMethod {
             event_loop_awakener,
             input_method: Arc::new(Mutex::new(InputMethod::new().unwrap())),
             is_events_handling_enabled: Arc::new(AtomicBool::new(false)),
+            size: Default::default()
         }
     }
 
@@ -43,12 +46,17 @@ impl MaliitInputMethod {
         im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
     }
 
+    pub fn size(&self) -> LogicalSize<u32> {
+        self.size.read().unwrap().to_owned()
+    }
+
     fn start_events_handling(&self) {
         let events_sink = self.events_sink.clone();
         let window_id = self.window_id;
         let event_loop_awakener = self.event_loop_awakener.clone();
         let is_events_handling_enabled = self.is_events_handling_enabled.clone();
         let input_method = self.input_method.clone();
+        let ime_size = self.size.clone();
         is_events_handling_enabled.store(true, Ordering::Relaxed);
 
         std::thread::spawn(move || {
@@ -70,7 +78,11 @@ impl MaliitInputMethod {
                             maliit::events::InputMethodEvent::Key { key, pressed } => {
                                 events_sink.push_window_event(kb_input_event_from_key(key, pressed), window_id);
                             },
-                            maliit::events::InputMethodEvent::AreaChanged(_x, y) => {
+                            maliit::events::InputMethodEvent::AreaChanged(_x, y, width, height) => {
+                                if let Ok(mut ime_size) = ime_size.write() {
+                                    (*ime_size).height = height as u32;
+                                    (*ime_size).width = width as u32;
+                                }
                                 if y == 0 {
                                     is_events_handling_enabled.store(false, Ordering::Relaxed);
                                 }

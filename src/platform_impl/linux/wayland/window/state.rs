@@ -388,7 +388,8 @@ impl WindowState {
     /// Get the size of the window.
     #[inline]
     pub fn inner_size(&self) -> LogicalSize<u32> {
-        self.size
+        let height = self.size.height - self.maliit_ime.size().height;
+        LogicalSize::new(self.size.width, height)
     }
 
     /// Whether the window received initial configure event from the compositor.
