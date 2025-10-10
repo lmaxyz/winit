@@ -330,17 +330,14 @@ impl WindowHandler for WinitState {
 
 impl OutputHandler for WinitState {
     fn output_state(&mut self) -> &mut OutputState {
-        println!("requested output state");
         &mut self.output_state
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
-        println!("new output");
         self.monitors.lock().unwrap().push(MonitorHandle::new(output));
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
-        println!("Output updated");
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
@@ -364,10 +361,11 @@ impl CompositorHandler for WinitState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        _: &WlSurface,
-        _: wayland_client::protocol::wl_output::Transform,
+        surface: &WlSurface,
+        transform: wayland_client::protocol::wl_output::Transform,
     ) {
-        println!("Transform changed")
+        println!("Transform changed");
+        surface.set_buffer_transform(transform);
         // TODO(kchibisov) we need to expose it somehow in winit.
     }
 
@@ -442,13 +440,16 @@ pub struct WindowCompositorUpdate {
     /// New scale factor.
     pub scale_changed: bool,
 
+    /// New transform.
+    pub transform_changed: bool,
+
     /// Close the window.
     pub close_window: bool,
 }
 
 impl WindowCompositorUpdate {
     fn new(window_id: WindowId) -> Self {
-        Self { window_id, resized: false, scale_changed: false, close_window: false }
+        Self { window_id, resized: false, scale_changed: false, transform_changed: false, close_window: false }
     }
 }
 
