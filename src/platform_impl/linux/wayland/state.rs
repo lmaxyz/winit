@@ -330,10 +330,12 @@ impl WindowHandler for WinitState {
 
 impl OutputHandler for WinitState {
     fn output_state(&mut self) -> &mut OutputState {
+        println!("requested output state");
         &mut self.output_state
     }
 
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, output: WlOutput) {
+        println!("new output");
         self.monitors.lock().unwrap().push(MonitorHandle::new(output));
     }
 
