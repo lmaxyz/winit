@@ -15,6 +15,7 @@ use sctk::reexports::client::{Connection, Proxy, QueueHandle};
 use sctk::registry::{ProvidesRegistryState, RegistryState};
 use sctk::seat::pointer::ThemedPointer;
 use sctk::seat::SeatState;
+use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
@@ -340,6 +341,10 @@ impl OutputHandler for WinitState {
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
+        self.windows.get_mut().iter().next().unwrap().1.lock().unwrap()
+            .window.wl_surface()
+            .set_buffer_transform(updated.transform());
+        println!("New output: {:?} {:?}", updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
@@ -376,6 +381,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
+        println!("Surface entered");
     }
 
     fn surface_leave(
@@ -385,6 +391,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
+        println!("Surface left");
     }
 
     fn scale_factor_changed(

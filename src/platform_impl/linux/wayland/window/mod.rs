@@ -555,7 +555,7 @@ impl Window {
     pub fn focus_window(&self) {}
 
     #[inline]
-    pub fn _surface(&self) -> &WlSurface {
+    pub fn surface(&self) -> &WlSurface {
         self.window.wl_surface()
     }
 
