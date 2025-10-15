@@ -19,6 +19,7 @@ use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
+use wayland_client::protocol::wl_output::Transform;
 
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::output::MonitorHandle;
@@ -244,6 +245,30 @@ impl WinitState {
         }
     }
 
+    pub fn transform_changed(&mut self, surface: &WlSurface, transform: Transform) {
+        println!("Transform changed");
+        let window_id = super::make_wid(surface);
+
+        if let Some(window) = self.windows.get_mut().get(&window_id) {
+            let pos = if let Some(pos) = self
+                .window_compositor_updates
+                .iter()
+                .position(|update| update.window_id == window_id)
+            {
+                pos
+            } else {
+                self.window_compositor_updates.push(WindowCompositorUpdate::new(window_id));
+                self.window_compositor_updates.len() - 1
+            };
+
+            // Update the scale factor right away.
+            window.lock().unwrap().set_buffer_transform(transform);
+            self.window_compositor_updates[pos].transform_changed = true;
+        } else {
+            println!("No window for transform changed event!!!");
+        }
+    }
+
     pub fn queue_close(updates: &mut Vec<WindowCompositorUpdate>, window_id: WindowId) {
         let pos = if let Some(pos) = updates.iter().position(|update| update.window_id == window_id)
         {
@@ -342,17 +367,17 @@ impl OutputHandler for WinitState {
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
 
-        {
-            let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
-            if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
-                window_state.window.commit();
-            } else {
-                // Handle error case
-                // Add logging
-            }
-        }
+        // {
+        //     let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
+        //     if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
+        //         window_state.window.commit();
+        //     } else {
+        //         // Handle error case
+        //         // Add logging
+        //     }
+        // }
 
-        println!("New output: {:?} {:?} {:?}", updated.position(), updated.transform(), updated.size());
+        println!("Updated output: {:?} {:?} {:?}", updated.position(), updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
@@ -377,8 +402,7 @@ impl CompositorHandler for WinitState {
         surface: &WlSurface,
         transform: wayland_client::protocol::wl_output::Transform,
     ) {
-        println!("Transform changed");
-        surface.set_buffer_transform(transform);
+        self.transform_changed(surface, transform);
         // TODO(kchibisov) we need to expose it somehow in winit.
     }
 

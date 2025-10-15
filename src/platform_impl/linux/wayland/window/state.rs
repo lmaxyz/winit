@@ -19,6 +19,7 @@ use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
+use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
 use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::QtExtendedSurface;
 
@@ -135,6 +136,7 @@ pub struct WindowState {
     // QtExtendedSurface global, provides close event
     _extended_surface: Option<QtExtendedSurface>,
     maliit_ime: MaliitInputMethod,
+    buffer_transform: Transform,
 }
 
 impl WindowState {
@@ -199,6 +201,7 @@ impl WindowState {
             has_focus: false,
             _extended_surface: extended_surface,
             maliit_ime: maliit_ime,
+            buffer_transform: Transform::Normal,
         }
     }
 
@@ -777,6 +780,11 @@ impl WindowState {
         if self.fractional_scale.is_none() {
             let _ = self.window.set_buffer_scale(self.scale_factor as _);
         }
+    }
+
+    pub fn set_buffer_transform(&mut self, transform: Transform) {
+        self.buffer_transform = transform;
+        let _ = self.window.set_buffer_transform(self.buffer_transform);
     }
 
     /// Make window background blurred
