@@ -297,7 +297,6 @@ impl WindowHandler for WinitState {
 
     fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface) {
         let window_id = super::make_wid(wl_surface);
-        println!("set focused {} for: {:?}, all: {:?}\n", focused, window_id, self.windows.borrow().keys());
         self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
 
         let mut window_state = self.windows

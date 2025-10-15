@@ -100,6 +100,7 @@ impl MaliitInputMethod {
                 }
 
                 if !is_events_handling_enabled.load(Ordering::Relaxed) {
+                    events_sink.lock().unwrap().push_window_event(WindowEvent::Ime(crate::event::Ime::Disabled), window_id);
                     break
                 }
             }

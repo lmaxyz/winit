@@ -61,6 +61,7 @@ impl Dispatch<ZwpTextInputV3, TextInputData, WinitState> for TextInputState {
     ) {
         let windows = state.windows.get_mut();
         let mut text_input_data = data.inner.lock().unwrap();
+        println!("TextInput event: {:?}", event);
         match event {
             TextInputEvent::Enter { surface } => {
                 let window_id = wayland::make_wid(&surface);
