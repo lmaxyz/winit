@@ -36,6 +36,7 @@ impl MaliitInputMethod {
                 im.show();
             }
             self.start_events_handling();
+            self.events_sink.lock().unwrap().push_window_event(WindowEvent::RedrawRequested, self.window_id);
         }
     }
 
