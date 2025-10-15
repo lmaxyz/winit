@@ -246,8 +246,9 @@ impl WinitState {
     }
 
     pub fn transform_changed(&mut self, surface: &WlSurface, transform: Transform) {
-        println!("Transform changed");
         let window_id = super::make_wid(surface);
+
+        println!("Transform changed for window {:?}, all windows: {:?}", window_id, self.windows.borrow().keys());
 
         if let Some(window) = self.windows.get_mut().get(&window_id) {
             let pos = if let Some(pos) = self
