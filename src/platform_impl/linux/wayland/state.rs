@@ -297,6 +297,7 @@ impl WindowHandler for WinitState {
 
     fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface) {
         let window_id = super::make_wid(wl_surface);
+        println!("set focused for: {:?}, all: {:?}", window_id, self.windows.borrow().keys());
         self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
 
         let mut window_state = self.windows
@@ -368,15 +369,15 @@ impl OutputHandler for WinitState {
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
 
-        // {
-        //     let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
-        //     if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
-        //         window_state.window.commit();
-        //     } else {
-        //         // Handle error case
-        //         // Add logging
-        //     }
-        // }
+        {
+            let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
+            if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
+                window_state.window.commit();
+            } else {
+                // Handle error case
+                // Add logging
+            }
+        }
 
         println!("Updated output: {:?} {:?} {:?}", updated.position(), updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
