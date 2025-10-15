@@ -297,7 +297,7 @@ impl WindowHandler for WinitState {
 
     fn set_window_focused(&mut self, focused: bool, wl_surface: &WlSurface) {
         let window_id = super::make_wid(wl_surface);
-        println!("set focused for: {:?}, all: {:?}", window_id, self.windows.borrow().keys());
+        println!("set focused {} for: {:?}, all: {:?}\n", focused, window_id, self.windows.borrow().keys());
         self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
 
         let mut window_state = self.windows
@@ -379,7 +379,7 @@ impl OutputHandler for WinitState {
             }
         }
 
-        println!("Updated output: {:?} {:?} {:?}", updated.position(), updated.transform(), updated.size());
+        println!("Updated output: {:?} {:?} {:?}\n", updated.position(), updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
@@ -415,7 +415,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
-        println!("Surface entered");
+        println!("Surface entered\n");
     }
 
     fn surface_leave(
@@ -425,7 +425,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
-        println!("Surface left");
+        println!("Surface left\n");
     }
 
     fn scale_factor_changed(
