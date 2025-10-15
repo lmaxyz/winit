@@ -341,9 +341,17 @@ impl OutputHandler for WinitState {
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
         let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
-        self.windows.get_mut().iter().next().unwrap().1.lock().unwrap()
-            .window.wl_surface()
-            .set_buffer_transform(updated.transform());
+
+        {
+            let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
+            if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
+                window_state.window.commit();
+            } else {
+                // Handle error case
+                // Add logging
+            }
+        }
+
         println!("New output: {:?} {:?}", updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
