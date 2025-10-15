@@ -352,7 +352,7 @@ impl OutputHandler for WinitState {
             }
         }
 
-        println!("New output: {:?} {:?}", updated.transform(), updated.size());
+        println!("New output: {:?} {:?} {:?}", updated.position(), updated.transform(), updated.size());
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
