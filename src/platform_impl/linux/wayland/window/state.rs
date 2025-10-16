@@ -21,7 +21,7 @@ use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
 use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
-use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::QtExtendedSurface;
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface};
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
@@ -134,9 +134,9 @@ pub struct WindowState {
     pub window: WlShellWindow,
     has_focus: bool,
     // QtExtendedSurface global, provides close event
-    _extended_surface: Option<QtExtendedSurface>,
+    extended_surface: Option<QtExtendedSurface>,
     maliit_ime: MaliitInputMethod,
-    buffer_transform: Transform,
+    transform: Transform,
 }
 
 impl WindowState {
@@ -199,9 +199,9 @@ impl WindowState {
             viewport,
             window,
             has_focus: false,
-            _extended_surface: extended_surface,
+            extended_surface: extended_surface,
             maliit_ime: maliit_ime,
-            buffer_transform: Transform::Normal,
+            transform: Transform::Normal,
         }
     }
 
@@ -783,9 +783,12 @@ impl WindowState {
         }
     }
 
-    pub fn set_buffer_transform(&mut self, transform: Transform) {
-        self.buffer_transform = transform;
-        let _ = self.window.set_buffer_transform(self.buffer_transform);
+    pub fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+        if let Some(extended_surface) = self.extended_surface.as_ref() {
+            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _)
+        }
+        let _ = self.window.set_buffer_transform(self.transform);
     }
 
     /// Make window background blurred
@@ -826,7 +829,6 @@ impl WindowState {
     /// Mark the window as transparent.
     #[inline]
     pub fn set_transparent(&mut self, transparent: bool) {
-        println!("Set transparent");
         self.transparent = transparent;
         self.reload_transparency_hint();
     }

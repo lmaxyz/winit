@@ -263,7 +263,7 @@ impl WinitState {
             };
 
             // Update the scale factor right away.
-            window.lock().unwrap().set_buffer_transform(transform);
+            window.lock().unwrap().set_transform(transform);
             self.window_compositor_updates[pos].transform_changed = true;
         } else {
             println!("No window for transform changed event!!!");

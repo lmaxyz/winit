@@ -142,7 +142,6 @@ impl Window {
                 window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
             },
             _ if attributes.maximized => {
-                println!("maximized");
                 wl_shell_window.set_maximized();
                 window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
             },
