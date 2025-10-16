@@ -721,6 +721,7 @@ impl WindowState {
         self.ime_allowed = allowed;
 
         let mut applied = false;
+        println!("Text inputs: {:?}", self.text_inputs);
         for text_input in &self.text_inputs {
             applied = true;
             if allowed {
@@ -732,7 +733,7 @@ impl WindowState {
             text_input.commit();
         }
 
-        applied
+        true
     }
 
     /// Set the IME position.
