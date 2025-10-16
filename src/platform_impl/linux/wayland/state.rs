@@ -369,7 +369,8 @@ impl OutputHandler for WinitState {
         let updated = MonitorHandle::new(updated);
 
         {
-            let window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
+            let mut window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
+            window_state.set_transform(updated.transform());
             if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
                 window_state.window.commit();
             } else {
