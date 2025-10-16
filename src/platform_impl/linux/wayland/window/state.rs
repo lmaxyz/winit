@@ -474,7 +474,6 @@ impl WindowState {
 
     /// Resize the window to the new inner size.
     pub fn resize(&mut self, inner_size: LogicalSize<u32>) {
-        println!("Resize: {:?}", inner_size);
         self.size = inner_size;
 
         // Update the stateless size.
@@ -485,17 +484,8 @@ impl WindowState {
         // Reload the hint.
         self.reload_transparency_hint();
 
-        // Set the window geometry.
-        // self.window.wl_shell_surface().set_window_geometry(
-        //     x,
-        //     y,
-        //     outer_size.width as i32,
-        //     outer_size.height as i32,
-        // );
-
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
-            println!("There is viewport with: {} {} size", self.size.width, self.size.height);
             // Set inner size without the borders.
             viewport.set_destination(self.size.width as _, self.size.height as _);
         }
@@ -827,7 +817,6 @@ impl WindowState {
     /// Register text input on the top-level.
     #[inline]
     pub fn text_input_entered(&mut self, text_input: &ZwpTextInputV3) {
-        println!("Text input entered");
         if !self.text_inputs.iter().any(|t| t == text_input) {
             self.text_inputs.push(text_input.clone());
         }
@@ -836,7 +825,6 @@ impl WindowState {
     /// The text input left the top-level.
     #[inline]
     pub fn text_input_left(&mut self, text_input: &ZwpTextInputV3) {
-        println!("Text input left");
         if let Some(position) = self.text_inputs.iter().position(|t| t == text_input) {
             self.text_inputs.remove(position);
         }

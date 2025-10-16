@@ -49,10 +49,6 @@ impl MaliitInputMethod {
                 window_state.resize(new_size);
                 let resize_event = WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor()));
                 self.events_sink.lock().unwrap().push_window_event(resize_event, self.window_id);
-                // Меняем размер здесь, потому что не успеваем получить событие
-                // let mut size = self.size.write().unwrap();
-                // (*size).height = 0;
-                // (*size).width = 0;
             }
             let mut im = self.input_method.lock().unwrap();
             im.hide();
@@ -60,7 +56,7 @@ impl MaliitInputMethod {
         }
     }
 
-    pub fn size(&self) -> LogicalSize<u32> {
+    pub fn _size(&self) -> LogicalSize<u32> {
         self.size.read().unwrap().to_owned()
     }
 

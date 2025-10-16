@@ -556,7 +556,6 @@ impl Window {
             // self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
             self.event_loop_awakener.ping();
         }
-        println!("IME allowed changed");
     }
 
     #[inline]
@@ -568,7 +567,7 @@ impl Window {
     pub fn focus_window(&self) {}
 
     #[inline]
-    pub fn surface(&self) -> &WlSurface {
+    pub fn _surface(&self) -> &WlSurface {
         self.window.wl_surface()
     }
 
