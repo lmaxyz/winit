@@ -38,23 +38,20 @@ impl MaliitInputMethod {
             }
             self.start_events_handling();
             self.events_sink.lock().unwrap().push_window_event(WindowEvent::RedrawRequested, self.window_id);
-            while self.size().height == 0 {
-                std::thread::sleep(std::time::Duration::from_millis(30));
-            }
         }
     }
 
     pub fn hide(&self) {
-        // self.is_events_handling_enabled.store(false, Ordering::Relaxed);
-        // if let Ok(mut window_state) = self.window_state.lock() {
-        //     // let mut new_size = window_state.inner_size();
-        //     // new_size.height += self.size.read().unwrap().height as u32;
-        //     // window_state.resize(new_size);
-        //     // Меняем размер здесь, потому что не успеваем получить событие
-        //     // let mut size = self.size.write().unwrap();
-        //     // (*size).height = 0;
-        //     // (*size).width = 0;
-        // }
+        self.is_events_handling_enabled.store(false, Ordering::Relaxed);
+        if let Ok(mut window_state) = self.window_state.lock() {
+            let mut new_size = window_state.inner_size();
+            new_size.height += self.size.read().unwrap().height as u32;
+            window_state.resize(new_size);
+            // Меняем размер здесь, потому что не успеваем получить событие
+            // let mut size = self.size.write().unwrap();
+            // (*size).height = 0;
+            // (*size).width = 0;
+        }
         let mut im = self.input_method.lock().unwrap();
         im.hide();
         im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
