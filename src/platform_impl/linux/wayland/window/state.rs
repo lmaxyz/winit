@@ -478,6 +478,7 @@ impl WindowState {
 
     /// Resize the window to the new inner size.
     pub fn resize(&mut self, inner_size: LogicalSize<u32>) {
+        println!("Resize: {:?}", inner_size);
         self.size = inner_size;
 
         // Update the stateless size.
@@ -825,6 +826,7 @@ impl WindowState {
     /// Mark the window as transparent.
     #[inline]
     pub fn set_transparent(&mut self, transparent: bool) {
+        println!("Set transparent");
         self.transparent = transparent;
         self.reload_transparency_hint();
     }
