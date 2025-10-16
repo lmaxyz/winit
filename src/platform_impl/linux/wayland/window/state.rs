@@ -26,8 +26,6 @@ use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{O
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
-use crate::platform_impl::wayland::make_wid;
-use crate::platform_impl::wayland::maliit_ime::MaliitInputMethod;
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
@@ -135,7 +133,6 @@ pub struct WindowState {
     has_focus: bool,
     // QtExtendedSurface global, provides close event
     extended_surface: Option<QtExtendedSurface>,
-    maliit_ime: MaliitInputMethod,
     transform: Transform,
 }
 
@@ -148,7 +145,6 @@ impl WindowState {
         initial_size: Size,
         window: WlShellWindow,
         _theme: Option<Theme>,
-        event_loop_awakener: calloop::ping::Ping,
     ) -> Self {
         let compositor = winit_state.compositor_state.clone();
         let pointer_constraints = winit_state.pointer_constraints.clone();
@@ -163,8 +159,6 @@ impl WindowState {
 
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
-
-        let maliit_ime = MaliitInputMethod::new(make_wid(window.wl_surface()), event_loop_awakener, winit_state.window_events_sink.clone());
 
         Self {
             blur: None,
@@ -200,7 +194,6 @@ impl WindowState {
             window,
             has_focus: false,
             extended_surface: extended_surface,
-            maliit_ime: maliit_ime,
             transform: Transform::Normal,
         }
     }
@@ -726,16 +719,6 @@ impl WindowState {
     /// Returns `true` if the requested state was applied.
     pub fn set_ime_allowed(&mut self, allowed: bool) -> bool {
         self.ime_allowed = allowed;
-
-        if allowed {
-            self.maliit_ime.show();
-            let height = self.size.height - self.maliit_ime.size().height;
-            self.resize(LogicalSize::new(self.size.width, height));
-        } else {
-            let height = self.size.height + self.maliit_ime.size().height;
-            self.maliit_ime.hide();
-            self.resize(LogicalSize::new(self.size.width, height));
-        }
 
         let mut applied = false;
         for text_input in &self.text_inputs {

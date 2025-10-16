@@ -1,5 +1,5 @@
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock};
-use crate::event::{KeyEvent, WindowEvent};
+use crate::{event::{KeyEvent, WindowEvent}, platform_impl::wayland::window::WindowState};
 
 use super::{event_loop::sink::EventSink, DeviceId, WindowId};
 
@@ -10,16 +10,18 @@ use maliit::input_method::InputMethod;
 pub struct MaliitInputMethod {
     input_method: Arc<Mutex<InputMethod>>,
     window_id: WindowId,
+    window_state: Arc<Mutex<WindowState>>,
     events_sink: Arc<Mutex<EventSink>>,
     event_loop_awakener: calloop::ping::Ping,
     is_events_handling_enabled: Arc<AtomicBool>,
-    size: Arc<RwLock<LogicalSize<u32>>>
+    size: Arc<RwLock<LogicalSize<u32>>>,
 }
 
 impl MaliitInputMethod {
-    pub fn new(window_id: WindowId, event_loop_awakener: calloop::ping::Ping, events_sink: Arc<Mutex<EventSink>>) -> Self {
+    pub fn new(window_id: WindowId, window_state: Arc<Mutex<WindowState>>, event_loop_awakener: calloop::ping::Ping, events_sink: Arc<Mutex<EventSink>>) -> Self {
         Self {
             window_id,
+            window_state,
             events_sink,
             event_loop_awakener,
             input_method: Arc::new(Mutex::new(InputMethod::new().unwrap())),
@@ -28,7 +30,7 @@ impl MaliitInputMethod {
         }
     }
 
-    pub fn show(&mut self) {
+    pub fn show(&self) {
         if !self.is_events_handling_enabled.load(Ordering::Relaxed) {
             {
                 let mut im = self.input_method.lock().unwrap();
@@ -42,9 +44,12 @@ impl MaliitInputMethod {
         }
     }
 
-    pub fn hide(&mut self) {
+    pub fn hide(&self) {
         self.is_events_handling_enabled.store(false, Ordering::Relaxed);
-        {
+        if let Ok(mut window_state) = self.window_state.lock() {
+            let mut new_size = window_state.inner_size();
+            new_size.height += self.size.read().unwrap().height as u32;
+            window_state.resize(new_size);
             // Меняем размер здесь, потому что не успеваем получить событие
             // let mut size = self.size.write().unwrap();
             // (*size).height = 0;
@@ -66,6 +71,7 @@ impl MaliitInputMethod {
         let is_events_handling_enabled = self.is_events_handling_enabled.clone();
         let input_method = self.input_method.clone();
         let ime_size = self.size.clone();
+        let window_state = self.window_state.clone();
         is_events_handling_enabled.store(true, Ordering::Relaxed);
 
         std::thread::spawn(move || {
@@ -93,6 +99,16 @@ impl MaliitInputMethod {
                                 } else if let Ok(mut ime_size) = ime_size.write() {
                                     (*ime_size).height = height as u32;
                                     (*ime_size).width = width as u32;
+                                }
+                                if let Ok(mut window_state) = window_state.lock() {
+                                    let mut new_size = window_state.inner_size();
+                                    if y == 0 {
+                                        new_size.height += ime_size.read().unwrap().height as u32;
+                                    } else {
+                                        new_size.height -= ime_size.read().unwrap().height as u32;
+                                    }
+
+                                    window_state.resize(new_size);
                                 }
                             }
                         };
