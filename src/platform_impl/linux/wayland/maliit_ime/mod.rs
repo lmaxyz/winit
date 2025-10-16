@@ -47,6 +47,8 @@ impl MaliitInputMethod {
                 let mut new_size = window_state.inner_size();
                 new_size.height += self.size.read().unwrap().height as u32;
                 window_state.resize(new_size);
+                let resize_event = WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor()));
+                self.events_sink.lock().unwrap().push_window_event(resize_event, self.window_id);
                 // Меняем размер здесь, потому что не успеваем получить событие
                 // let mut size = self.size.write().unwrap();
                 // (*size).height = 0;
@@ -76,7 +78,6 @@ impl MaliitInputMethod {
             loop {
                 if let Some(events) = input_method.lock().unwrap().poll_new_events(std::time::Duration::from_millis(30)) {
                     for event in events {
-                        println!("new event");
                         let mut events_sink = events_sink.lock().unwrap();
                         match event {
                             maliit::events::InputMethodEvent::Text(txt) => {
@@ -108,7 +109,6 @@ impl MaliitInputMethod {
                                     }
                                     window_state.resize(new_size);
                                     events_sink.push_window_event(WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor())), window_id);
-                                    println!("Resize from ime");
                                 }
                             }
                         };
