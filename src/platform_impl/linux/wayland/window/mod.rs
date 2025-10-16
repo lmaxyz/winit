@@ -145,7 +145,10 @@ impl Window {
                 wl_shell_window.set_maximized();
                 window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
             },
-            _ => (),
+            _ => {
+                wl_shell_window.set_top_level();
+                window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
+            },
         };
 
         match attributes.cursor {

@@ -391,8 +391,9 @@ impl WindowState {
     /// Get the size of the window.
     #[inline]
     pub fn inner_size(&self) -> LogicalSize<u32> {
-        let height = self.size.height - self.maliit_ime.size().height;
-        LogicalSize::new(self.size.width, height)
+        // let height = self.size.height - self.maliit_ime.size().height;
+        // LogicalSize::new(self.size.width, height)
+        self.size
     }
 
     /// Whether the window received initial configure event from the compositor.
@@ -410,8 +411,9 @@ impl WindowState {
     /// Get the outer size of the window.
     #[inline]
     pub fn outer_size(&self) -> LogicalSize<u32> {
-        let height = self.size.height - self.maliit_ime.size().height;
-        LogicalSize::new(self.size.width, height)
+        // let height = self.size.height - self.maliit_ime.size().height;
+        // LogicalSize::new(self.size.width, height)
+        self.size
     }
 
     /// Register pointer on the top-level.
@@ -500,6 +502,7 @@ impl WindowState {
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
+            println!("There is viewport with: {} {} size", self.size.width, self.size.height);
             // Set inner size without the borders.
             viewport.set_destination(self.size.width as _, self.size.height as _);
         }
@@ -726,6 +729,8 @@ impl WindowState {
 
         if allowed {
             self.maliit_ime.show();
+            let height = self.size.height - self.maliit_ime.size().height;
+            self.resize(LogicalSize::new(self.size.width, height));
         } else {
             self.maliit_ime.hide();
         }
