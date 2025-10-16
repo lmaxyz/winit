@@ -410,7 +410,8 @@ impl WindowState {
     /// Get the outer size of the window.
     #[inline]
     pub fn outer_size(&self) -> LogicalSize<u32> {
-        self.size
+        let height = self.size.height - self.maliit_ime.size().height;
+        LogicalSize::new(self.size.width, height)
     }
 
     /// Register pointer on the top-level.
