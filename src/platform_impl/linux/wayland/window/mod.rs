@@ -18,6 +18,7 @@ use crate::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
 use crate::event::{Ime, WindowEvent};
 use crate::event_loop::AsyncRequestSerial;
+use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::{
     Fullscreen, MonitorHandle as PlatformMonitorHandle, OsError, PlatformIcon,
 };
@@ -545,6 +546,7 @@ impl Window {
         if window_state.ime_allowed() != allowed && window_state.set_ime_allowed(allowed) {
             let event = WindowEvent::Ime(if allowed { Ime::Enabled } else { Ime::Disabled });
             self.window_events_sink.lock().unwrap().push_window_event(event, self.window_id);
+            self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
             self.event_loop_awakener.ping();
         }
     }

@@ -46,9 +46,9 @@ impl MaliitInputMethod {
         self.is_events_handling_enabled.store(false, Ordering::Relaxed);
         {
             // Меняем размер здесь, потому что не успеваем получить событие
-            let mut size = self.size.write().unwrap();
-            (*size).height = 0;
-            (*size).width = 0;
+            // let mut size = self.size.write().unwrap();
+            // (*size).height = 0;
+            // (*size).width = 0;
         }
         let mut im = self.input_method.lock().unwrap();
         im.hide();
