@@ -732,7 +732,9 @@ impl WindowState {
             let height = self.size.height - self.maliit_ime.size().height;
             self.resize(LogicalSize::new(self.size.width, height));
         } else {
+            let height = self.size.height + self.maliit_ime.size().height;
             self.maliit_ime.hide();
+            self.resize(LogicalSize::new(self.size.width, height));
         }
 
         let mut applied = false;

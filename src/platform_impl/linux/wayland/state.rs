@@ -319,6 +319,7 @@ impl WindowHandler for WinitState {
         wl_surface: &WlSurface,
         configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32)
     ) {
+        println!("Configure event: {:?}, {}x{}", configure.0, configure.1, configure.2);
         let window_id = super::make_wid(wl_surface);
 
         let pos = if let Some(pos) =
