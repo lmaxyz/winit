@@ -32,11 +32,13 @@ impl MaliitInputMethod {
         if !self.is_events_handling_enabled.load(Ordering::Relaxed) {
             {
                 let mut im = self.input_method.lock().unwrap();
-                im.reset();
                 im.show();
             }
             self.start_events_handling();
             self.events_sink.lock().unwrap().push_window_event(WindowEvent::RedrawRequested, self.window_id);
+            while self.size().height == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+            }
         }
     }
 

@@ -842,6 +842,7 @@ impl WindowState {
     /// Register text input on the top-level.
     #[inline]
     pub fn text_input_entered(&mut self, text_input: &ZwpTextInputV3) {
+        println!("Text input entered");
         if !self.text_inputs.iter().any(|t| t == text_input) {
             self.text_inputs.push(text_input.clone());
         }
@@ -850,6 +851,7 @@ impl WindowState {
     /// The text input left the top-level.
     #[inline]
     pub fn text_input_left(&mut self, text_input: &ZwpTextInputV3) {
+        println!("Text input left");
         if let Some(position) = self.text_inputs.iter().position(|t| t == text_input) {
             self.text_inputs.remove(position);
         }
