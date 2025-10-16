@@ -107,7 +107,7 @@ impl MaliitInputMethod {
                                     } else {
                                         new_size.height -= ime_size.read().unwrap().height as u32;
                                     }
-
+                                    println!("Resize from ime");
                                     window_state.resize(new_size);
                                 }
                             }
