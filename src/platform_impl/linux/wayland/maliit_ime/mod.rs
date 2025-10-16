@@ -42,19 +42,20 @@ impl MaliitInputMethod {
     }
 
     pub fn hide(&self) {
-        self.is_events_handling_enabled.store(false, Ordering::Relaxed);
-        if let Ok(mut window_state) = self.window_state.lock() {
-            let mut new_size = window_state.inner_size();
-            new_size.height += self.size.read().unwrap().height as u32;
-            window_state.resize(new_size);
-            // Меняем размер здесь, потому что не успеваем получить событие
-            // let mut size = self.size.write().unwrap();
-            // (*size).height = 0;
-            // (*size).width = 0;
+        if self.is_events_handling_enabled.fetch_and(false, Ordering::Relaxed) {
+            if let Ok(mut window_state) = self.window_state.lock() {
+                let mut new_size = window_state.inner_size();
+                new_size.height += self.size.read().unwrap().height as u32;
+                window_state.resize(new_size);
+                // Меняем размер здесь, потому что не успеваем получить событие
+                // let mut size = self.size.write().unwrap();
+                // (*size).height = 0;
+                // (*size).width = 0;
+            }
+            let mut im = self.input_method.lock().unwrap();
+            im.hide();
+            im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
         }
-        let mut im = self.input_method.lock().unwrap();
-        im.hide();
-        im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
     }
 
     pub fn size(&self) -> LogicalSize<u32> {
