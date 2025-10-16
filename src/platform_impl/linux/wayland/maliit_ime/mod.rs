@@ -88,12 +88,11 @@ impl MaliitInputMethod {
                                 events_sink.push_window_event(kb_input_event_from_key(key, pressed), window_id);
                             },
                             maliit::events::InputMethodEvent::AreaChanged(_x, y, width, height) => {
-                                if let Ok(mut ime_size) = ime_size.write() {
-                                    (*ime_size).height = height as u32;
-                                    (*ime_size).width = width as u32;
-                                }
                                 if y == 0 {
                                     is_events_handling_enabled.store(false, Ordering::Relaxed);
+                                } else if let Ok(mut ime_size) = ime_size.write() {
+                                    (*ime_size).height = height as u32;
+                                    (*ime_size).width = width as u32;
                                 }
                             }
                         };
