@@ -720,18 +720,17 @@ impl WindowState {
     pub fn set_ime_allowed(&mut self, allowed: bool) -> bool {
         self.ime_allowed = allowed;
 
-        let mut applied = false;
-        println!("Text inputs: {:?}", self.text_inputs);
-        for text_input in &self.text_inputs {
-            applied = true;
-            if allowed {
-                text_input.enable();
-                text_input.set_content_type_by_purpose(self.ime_purpose);
-            } else {
-                text_input.disable();
-            }
-            text_input.commit();
-        }
+        // let mut applied = false;
+        // for text_input in &self.text_inputs {
+        //     applied = true;
+        //     if allowed {
+        //         text_input.enable();
+        //         text_input.set_content_type_by_purpose(self.ime_purpose);
+        //     } else {
+        //         text_input.disable();
+        //     }
+        //     text_input.commit();
+        // }
 
         true
     }
