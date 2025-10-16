@@ -74,7 +74,7 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
             }
             ExtendedSurfaceEvent::OnscreenVisibility { visible } => {
                 println!("QtSurfaceExtension VISIBLE EVENT: {}", visible);
-                state.set_window_focused(visible == 2, &data.0);
+                state.set_window_focused(visible != 3, &data.0);
             },
             ExtendedSurfaceEvent::SetGenericProperty { name: _, value: _ } => {
                 debug!("QtSurfaceExtension SetGenericProperty EVENT");
