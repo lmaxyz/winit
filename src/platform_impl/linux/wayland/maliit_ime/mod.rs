@@ -1,5 +1,5 @@
 use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock};
-use crate::{event::{KeyEvent, WindowEvent}, platform_impl::wayland::window::WindowState};
+use crate::{event::{KeyEvent, WindowEvent}, platform_impl::wayland::{logical_to_physical_rounded, window::WindowState}};
 
 use super::{event_loop::sink::EventSink, DeviceId, WindowId};
 
@@ -109,6 +109,7 @@ impl MaliitInputMethod {
                                         new_size.height -= ime_size.read().unwrap().height as u32;
                                     }
                                     window_state.resize(new_size);
+                                    events_sink.push_window_event(WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor())), window_id);
                                     println!("Resize from ime");
                                 }
                             }

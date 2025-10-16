@@ -553,7 +553,7 @@ impl Window {
         if window_state.ime_allowed() != allowed && window_state.set_ime_allowed(allowed) {
             let event = WindowEvent::Ime(if allowed { Ime::Enabled } else { Ime::Disabled });
             self.window_events_sink.lock().unwrap().push_window_event(event, self.window_id);
-            self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
+            // self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
             self.event_loop_awakener.ping();
         }
         println!("IME allowed changed");
