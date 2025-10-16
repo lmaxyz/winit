@@ -544,14 +544,13 @@ impl Window {
 
     #[inline]
     pub fn set_ime_allowed(&self, allowed: bool) {
-        let mut window_state = self.window_state.lock().unwrap();
-
         if allowed {
             self.maliit_ime.show();
         } else {
             self.maliit_ime.hide();
         }
 
+        let mut window_state = self.window_state.lock().unwrap();
         if window_state.ime_allowed() != allowed && window_state.set_ime_allowed(allowed) {
             let event = WindowEvent::Ime(if allowed { Ime::Enabled } else { Ime::Disabled });
             self.window_events_sink.lock().unwrap().push_window_event(event, self.window_id);
