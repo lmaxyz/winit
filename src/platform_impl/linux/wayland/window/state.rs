@@ -773,7 +773,7 @@ impl WindowState {
     pub fn set_transform(&mut self, transform: Transform) {
         self.transform = transform;
         if let Some(extended_surface) = self.extended_surface.as_ref() {
-            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _)
+            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
             match transform {
                 Transform::Normal | Transform::Flipped180 => {
                     let mut qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
