@@ -75,9 +75,9 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
             ExtendedSurfaceEvent::OnscreenVisibility { visible } => {
                 debug!("QtSurfaceExtension VISIBLE EVENT: {}", visible);
                 state.set_window_focused(visible != 3, &data.0);
-                surface.set_window_flags(Windowflag::BypassWindowManager as _);
-                surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
-                surface.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
+                surface.set_window_flags(Windowflag::StaysOnTop as _);
+                surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![10,10,10,10,10,10,10,10,10,10,10,]);
+                surface.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![10,10,10,10,10,10,10,10,10,10,10,]);
             },
             ExtendedSurfaceEvent::SetGenericProperty { name, value } => {
                 println!("QtSurfaceExtension SetGenericProperty EVENT: {}, {:?}", name, value);
