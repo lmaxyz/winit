@@ -21,7 +21,7 @@ use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
 use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
-use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface};
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface, Windowflag};
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
@@ -160,6 +160,7 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
+        extended_surface.as_ref().map(|es| es.set_window_flags(Windowflag::BypassWindowManager as _));
         extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]));
         extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]));
 

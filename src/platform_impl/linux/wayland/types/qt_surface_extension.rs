@@ -9,7 +9,7 @@ use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_protocols_plasma::surface_extension::client::{
     qt_extended_surface::QtExtendedSurface, qt_surface_extension::QtSurfaceExtension,
-    qt_extended_surface::Event as ExtendedSurfaceEvent
+    qt_extended_surface::Event as ExtendedSurfaceEvent, qt_extended_surface::Windowflag
 };
 
 use crate::platform_impl::wayland::state::WinitState;
@@ -75,6 +75,7 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
             ExtendedSurfaceEvent::OnscreenVisibility { visible } => {
                 debug!("QtSurfaceExtension VISIBLE EVENT: {}", visible);
                 state.set_window_focused(visible != 3, &data.0);
+                surface.set_window_flags(Windowflag::BypassWindowManager as _);
                 surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
                 surface.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]);
             },
