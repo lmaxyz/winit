@@ -161,8 +161,10 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), QVariant::from_bool(true).as_bytes().to_vec()));
-        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), QVariant::from_bool(true).as_bytes().to_vec()));
+        let qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
+        println!("{:?}", qvariant_true);
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), qvariant_true.clone()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), qvariant_true));
 
         Self {
             blur: None,
@@ -772,6 +774,26 @@ impl WindowState {
         self.transform = transform;
         if let Some(extended_surface) = self.extended_surface.as_ref() {
             extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _)
+            match transform {
+                Transform::Normal | Transform::Flipped180 => {
+                    let mut qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
+                    qvariant_true.push(0);
+                    println!("{:?}", qvariant_true);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), qvariant_true.clone());
+                },
+                Transform::_180 | Transform::_270 => {
+                    let mut qvariant_true = QVariant::from_bool(false).as_bytes().to_vec();
+                    qvariant_true.push(0);
+                    println!("{:?}", qvariant_true);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), qvariant_true.clone());
+                },
+                _ => {
+                    let mut qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
+                    qvariant_true.push(0);
+                    println!("Other {:?}", qvariant_true);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), qvariant_true.clone());
+                }
+            }
         }
         let _ = self.window.set_buffer_transform(self.transform);
     }
