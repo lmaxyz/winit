@@ -21,7 +21,7 @@ use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
 use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
-use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface, Windowflag};
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface};
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
@@ -35,6 +35,7 @@ use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor}
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::PlatformCustomCursor;
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
+use crate::platform_impl::wayland::types::qvariant::QVariant;
 
 use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 
@@ -160,8 +161,8 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), "true".as_bytes().to_vec()));
-        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), "true".as_bytes().to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), QVariant::from_bool(true).as_bytes().to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), QVariant::from_bool(true).as_bytes().to_vec()));
 
         Self {
             blur: None,
