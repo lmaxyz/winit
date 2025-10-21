@@ -8,7 +8,6 @@ struct QVariantHeader {
 union QVariantData {
     bool_val: i32,
     int_val: i32,
-    double_val: f64,
     // другие типы...
 }
 
