@@ -160,6 +160,8 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![]));
+
         Self {
             blur: None,
             blur_manager: winit_state.kwin_blur_manager.clone(),
