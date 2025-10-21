@@ -160,9 +160,8 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        extended_surface.as_ref().map(|es| es.set_window_flags(Windowflag::StaysOnTop as _));
-        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![10,10,10,10,10,10,10,10,10,10,10,]));
-        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![10,10,10,10,10,10,10,10,10,10,10,]));
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), "com.lmaxyz.Haboost".as_bytes().to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), "com.lmaxyz.Haboost".as_bytes().to_vec()));
 
         Self {
             blur: None,
