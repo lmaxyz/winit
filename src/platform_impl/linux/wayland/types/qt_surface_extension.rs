@@ -9,7 +9,7 @@ use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_protocols_plasma::surface_extension::client::{
     qt_extended_surface::QtExtendedSurface, qt_surface_extension::QtSurfaceExtension,
-    qt_extended_surface::Event as ExtendedSurfaceEvent, qt_extended_surface::Windowflag
+    qt_extended_surface::Event as ExtendedSurfaceEvent
 };
 
 use crate::platform_impl::wayland::state::WinitState;
@@ -77,7 +77,7 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
                 state.set_window_focused(visible != 3, &data.0);
             },
             ExtendedSurfaceEvent::SetGenericProperty { name, value } => {
-                println!("QtSurfaceExtension SetGenericProperty EVENT: {}, {:?}", name, value);
+                debug!("QtSurfaceExtension SetGenericProperty EVENT: {}, {:?}", name, value);
             },
             _ => unreachable!(),
         }

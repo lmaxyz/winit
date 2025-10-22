@@ -35,12 +35,14 @@ use crate::platform_impl::wayland::types::cursor::{CustomCursor, SelectedCursor}
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
 use crate::platform_impl::PlatformCustomCursor;
 use crate::window::{CursorGrabMode, CursorIcon, ImePurpose, ResizeDirection, Theme};
-use crate::platform_impl::wayland::types::qvariant::QVariant;
 
 use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 
 // Minimum window inner size.
 const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
+
+const Q_VARIANT_BOOL_TRUE: &[u8] = &[0, 0, 0, 1, 0, 1];
+const Q_VARIANT_BOOL_FALSE: &[u8] = &[0, 0, 0, 1, 0, 0];
 
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
@@ -161,10 +163,8 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        let qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
-        println!("{:?}", qvariant_true);
-        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![0, 0, 0, 1, 0, 1]));
-        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), vec![0, 0, 0, 1, 0, 1]));
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
 
         Self {
             blur: None,
@@ -776,22 +776,13 @@ impl WindowState {
             extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
             match transform {
                 Transform::Normal | Transform::Flipped180 => {
-                    let mut qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
-                    qvariant_true.push(0);
-                    println!("{:?}", qvariant_true);
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![0, 0, 0, 1, 0, 1]);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
                 },
                 Transform::_180 | Transform::_270 => {
-                    let mut qvariant_true = QVariant::from_bool(false).as_bytes().to_vec();
-                    qvariant_true.push(0);
-                    println!("{:?}", qvariant_true);
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![0, 0, 0, 1, 0, 0]);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_FALSE.to_vec());
                 },
                 _ => {
-                    let mut qvariant_true = QVariant::from_bool(true).as_bytes().to_vec();
-                    qvariant_true.push(0);
-                    println!("Other {:?}", qvariant_true);
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), vec![0, 0, 0, 1, 0, 1]);
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
                 }
             }
         }
