@@ -41,6 +41,9 @@ use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWin
 // Minimum window inner size.
 const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
 
+const Q_VARIANT_BOOL_TRUE: &[u8] = &[0, 0, 0, 1, 0, 1];
+const Q_VARIANT_BOOL_FALSE: &[u8] = &[0, 0, 0, 1, 0, 0];
+
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
     /// The connection to Wayland server.
@@ -159,6 +162,9 @@ impl WindowState {
 
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
+
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
 
         Self {
             blur: None,
@@ -767,7 +773,18 @@ impl WindowState {
     pub fn set_transform(&mut self, transform: Transform) {
         self.transform = transform;
         if let Some(extended_surface) = self.extended_surface.as_ref() {
-            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _)
+            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
+            match transform {
+                Transform::Normal | Transform::Flipped180 => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
+                },
+                Transform::_180 | Transform::_270 => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_FALSE.to_vec());
+                },
+                _ => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
+                }
+            }
         }
         let _ = self.window.set_buffer_transform(self.transform);
     }
