@@ -61,7 +61,7 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
 {
     fn event(
         state: &mut D,
-        _: &QtExtendedSurface,
+        _surface: &QtExtendedSurface,
         event: ExtendedSurfaceEvent,
         data: &SurfaceData,
         conn: &Connection,
@@ -74,10 +74,10 @@ impl<D> Dispatch<QtExtendedSurface, SurfaceData, D> for SurfaceExtension
             }
             ExtendedSurfaceEvent::OnscreenVisibility { visible } => {
                 debug!("QtSurfaceExtension VISIBLE EVENT: {}", visible);
-                state.set_window_focused(visible == 5, &data.0);
+                state.set_window_focused(visible != 3, &data.0);
             },
-            ExtendedSurfaceEvent::SetGenericProperty { name: _, value: _ } => {
-                debug!("QtSurfaceExtension SetGenericProperty EVENT");
+            ExtendedSurfaceEvent::SetGenericProperty { name, value } => {
+                debug!("QtSurfaceExtension SetGenericProperty EVENT: {}, {:?}", name, value);
             },
             _ => unreachable!(),
         }

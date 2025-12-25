@@ -1,46 +1,63 @@
-use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex};
-use crate::event::{KeyEvent, WindowEvent};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, RwLock};
+use crate::{event::{KeyEvent, WindowEvent}, platform_impl::wayland::{logical_to_physical_rounded, window::WindowState}};
 
 use super::{event_loop::sink::EventSink, DeviceId, WindowId};
 
+use dpi::LogicalSize;
 use maliit::input_method::InputMethod;
 
 
 pub struct MaliitInputMethod {
     input_method: Arc<Mutex<InputMethod>>,
     window_id: WindowId,
+    window_state: Arc<Mutex<WindowState>>,
     events_sink: Arc<Mutex<EventSink>>,
     event_loop_awakener: calloop::ping::Ping,
-    is_events_handling_enabled: Arc<AtomicBool>
+    is_events_handling_enabled: Arc<AtomicBool>,
+    size: Arc<RwLock<LogicalSize<u32>>>,
 }
 
 impl MaliitInputMethod {
-    pub fn new(window_id: WindowId, event_loop_awakener: calloop::ping::Ping, events_sink: Arc<Mutex<EventSink>>) -> Self {
+    pub fn new(window_id: WindowId, window_state: Arc<Mutex<WindowState>>, event_loop_awakener: calloop::ping::Ping, events_sink: Arc<Mutex<EventSink>>) -> Self {
         Self {
             window_id,
+            window_state,
             events_sink,
             event_loop_awakener,
             input_method: Arc::new(Mutex::new(InputMethod::new().unwrap())),
             is_events_handling_enabled: Arc::new(AtomicBool::new(false)),
+            size: Default::default()
         }
     }
 
-    pub fn show(&mut self) {
+    pub fn show(&self) {
         if !self.is_events_handling_enabled.load(Ordering::Relaxed) {
             {
                 let mut im = self.input_method.lock().unwrap();
-                im.reset();
                 im.show();
             }
             self.start_events_handling();
+            self.events_sink.lock().unwrap().push_window_event(WindowEvent::RedrawRequested, self.window_id);
         }
     }
 
-    pub fn hide(&mut self) {
-        self.is_events_handling_enabled.store(false, Ordering::Relaxed);
-        let mut im = self.input_method.lock().unwrap();
-        im.hide();
-        im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
+    pub fn hide(&self) {
+        if self.is_events_handling_enabled.fetch_and(false, Ordering::Relaxed) {
+            if let Ok(mut window_state) = self.window_state.lock() {
+                let mut new_size = window_state.inner_size();
+                new_size.height += self.size.read().unwrap().height as u32;
+                window_state.resize(new_size);
+                let resize_event = WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor()));
+                self.events_sink.lock().unwrap().push_window_event(resize_event, self.window_id);
+            }
+            let mut im = self.input_method.lock().unwrap();
+            im.hide();
+            im.poll_new_events(std::time::Duration::from_millis(30)); // Skip accumulated events
+        }
+    }
+
+    pub fn _size(&self) -> LogicalSize<u32> {
+        self.size.read().unwrap().to_owned()
     }
 
     fn start_events_handling(&self) {
@@ -49,6 +66,8 @@ impl MaliitInputMethod {
         let event_loop_awakener = self.event_loop_awakener.clone();
         let is_events_handling_enabled = self.is_events_handling_enabled.clone();
         let input_method = self.input_method.clone();
+        let ime_size = self.size.clone();
+        let window_state = self.window_state.clone();
         is_events_handling_enabled.store(true, Ordering::Relaxed);
 
         std::thread::spawn(move || {
@@ -70,9 +89,22 @@ impl MaliitInputMethod {
                             maliit::events::InputMethodEvent::Key { key, pressed } => {
                                 events_sink.push_window_event(kb_input_event_from_key(key, pressed), window_id);
                             },
-                            maliit::events::InputMethodEvent::AreaChanged(_x, y) => {
+                            maliit::events::InputMethodEvent::AreaChanged(_x, y, width, height) => {
                                 if y == 0 {
                                     is_events_handling_enabled.store(false, Ordering::Relaxed);
+                                } else if let Ok(mut ime_size) = ime_size.write() {
+                                    (*ime_size).height = height as u32;
+                                    (*ime_size).width = width as u32;
+                                }
+                                if let Ok(mut window_state) = window_state.lock() {
+                                    let mut new_size = window_state.inner_size();
+                                    if y == 0 {
+                                        new_size.height += ime_size.read().unwrap().height as u32;
+                                    } else {
+                                        new_size.height -= ime_size.read().unwrap().height as u32;
+                                    }
+                                    window_state.resize(new_size);
+                                    events_sink.push_window_event(WindowEvent::Resized(logical_to_physical_rounded(new_size, window_state.scale_factor())), window_id);
                                 }
                             }
                         };
@@ -81,6 +113,7 @@ impl MaliitInputMethod {
                 }
 
                 if !is_events_handling_enabled.load(Ordering::Relaxed) {
+                    events_sink.lock().unwrap().push_window_event(WindowEvent::Ime(crate::event::Ime::Disabled), window_id);
                     break
                 }
             }

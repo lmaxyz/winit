@@ -1,4 +1,4 @@
-use sctk::reexports::client::protocol::wl_output::WlOutput;
+use sctk::reexports::client::protocol::wl_output::{WlOutput, Transform};
 use sctk::reexports::client::Proxy;
 
 use sctk::output::OutputData;
@@ -104,6 +104,12 @@ impl MonitorHandle {
                 monitor: monitor.clone(),
             })
         })
+    }
+
+    #[inline]
+    pub fn transform(&self) -> Transform {
+        let output_data = self.proxy.data::<OutputData>().unwrap();
+        output_data.transform()
     }
 }
 

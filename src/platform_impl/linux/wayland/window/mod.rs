@@ -18,6 +18,7 @@ use crate::dpi::{LogicalSize, PhysicalPosition, PhysicalSize, Position, Size};
 use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
 use crate::event::{Ime, WindowEvent};
 use crate::event_loop::AsyncRequestSerial;
+use crate::platform_impl::wayland::maliit_ime::MaliitInputMethod;
 use crate::platform_impl::{
     Fullscreen, MonitorHandle as PlatformMonitorHandle, OsError, PlatformIcon,
 };
@@ -63,6 +64,7 @@ pub struct Window {
 
     /// The event sink to deliver synthetic events.
     window_events_sink: Arc<Mutex<EventSink>>,
+    maliit_ime: MaliitInputMethod,
 }
 
 impl Window {
@@ -96,7 +98,6 @@ impl Window {
             size,
             wl_shell_window.clone(),
             attributes.preferred_theme,
-            event_loop_window_target.event_loop_awakener.clone(),
         );
 
         // Set transparency hint.
@@ -145,7 +146,10 @@ impl Window {
                 wl_shell_window.set_maximized();
                 window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
             },
-            _ => (),
+            _ => {
+                wl_shell_window.set_top_level();
+                window_state.resize(monitor_size.to_logical(window_state.scale_factor()));
+            },
         };
 
         match attributes.cursor {
@@ -183,6 +187,8 @@ impl Window {
         let event_loop_awakener = event_loop_window_target.event_loop_awakener.clone();
         event_loop_awakener.ping();
 
+        let maliit_ime = MaliitInputMethod::new(window_id, window_state.clone(), event_loop_awakener.clone(), window_events_sink.clone());
+
         Ok(Self {
             window: wl_shell_window,
             display,
@@ -194,6 +200,7 @@ impl Window {
             event_loop_awakener,
             window_requests,
             window_events_sink,
+            maliit_ime,
         })
     }
 }
@@ -537,11 +544,16 @@ impl Window {
 
     #[inline]
     pub fn set_ime_allowed(&self, allowed: bool) {
+        if allowed {
+            self.maliit_ime.show();
+        } else {
+            self.maliit_ime.hide();
+        }
         let mut window_state = self.window_state.lock().unwrap();
-
         if window_state.ime_allowed() != allowed && window_state.set_ime_allowed(allowed) {
             let event = WindowEvent::Ime(if allowed { Ime::Enabled } else { Ime::Disabled });
             self.window_events_sink.lock().unwrap().push_window_event(event, self.window_id);
+            // self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
             self.event_loop_awakener.ping();
         }
     }

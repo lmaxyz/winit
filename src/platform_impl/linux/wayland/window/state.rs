@@ -19,14 +19,13 @@ use sctk::shm::slot::SlotPool;
 use sctk::shm::Shm;
 use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
+use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
-use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::QtExtendedSurface;
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface};
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
-use crate::platform_impl::wayland::make_wid;
-use crate::platform_impl::wayland::maliit_ime::MaliitInputMethod;
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, WinitPointerData, WinitPointerDataExt, ZwpTextInputV3Ext,
@@ -41,6 +40,9 @@ use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWin
 
 // Minimum window inner size.
 const MIN_WINDOW_SIZE: LogicalSize<u32> = LogicalSize::new(2, 1);
+
+const Q_VARIANT_BOOL_TRUE: &[u8] = &[0, 0, 0, 1, 0, 1];
+const Q_VARIANT_BOOL_FALSE: &[u8] = &[0, 0, 0, 1, 0, 0];
 
 /// The state of the window which is being updated from the [`WinitState`].
 pub struct WindowState {
@@ -133,8 +135,8 @@ pub struct WindowState {
     pub window: WlShellWindow,
     has_focus: bool,
     // QtExtendedSurface global, provides close event
-    _extended_surface: Option<QtExtendedSurface>,
-    maliit_ime: MaliitInputMethod,
+    extended_surface: Option<QtExtendedSurface>,
+    transform: Transform,
 }
 
 impl WindowState {
@@ -146,7 +148,6 @@ impl WindowState {
         initial_size: Size,
         window: WlShellWindow,
         _theme: Option<Theme>,
-        event_loop_awakener: calloop::ping::Ping,
     ) -> Self {
         let compositor = winit_state.compositor_state.clone();
         let pointer_constraints = winit_state.pointer_constraints.clone();
@@ -162,7 +163,8 @@ impl WindowState {
         let extended_surface = winit_state.surface_extension.as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        let maliit_ime = MaliitInputMethod::new(make_wid(window.wl_surface()), event_loop_awakener, winit_state.window_events_sink.clone());
+        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
+        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
 
         Self {
             blur: None,
@@ -197,8 +199,8 @@ impl WindowState {
             viewport,
             window,
             has_focus: false,
-            _extended_surface: extended_surface,
-            maliit_ime: maliit_ime,
+            extended_surface: extended_surface,
+            transform: Transform::Normal,
         }
     }
 
@@ -388,6 +390,8 @@ impl WindowState {
     /// Get the size of the window.
     #[inline]
     pub fn inner_size(&self) -> LogicalSize<u32> {
+        // let height = self.size.height - self.maliit_ime.size().height;
+        // LogicalSize::new(self.size.width, height)
         self.size
     }
 
@@ -406,6 +410,8 @@ impl WindowState {
     /// Get the outer size of the window.
     #[inline]
     pub fn outer_size(&self) -> LogicalSize<u32> {
+        // let height = self.size.height - self.maliit_ime.size().height;
+        // LogicalSize::new(self.size.width, height)
         self.size
     }
 
@@ -483,14 +489,6 @@ impl WindowState {
 
         // Reload the hint.
         self.reload_transparency_hint();
-
-        // Set the window geometry.
-        // self.window.wl_shell_surface().set_window_geometry(
-        //     x,
-        //     y,
-        //     outer_size.width as i32,
-        //     outer_size.height as i32,
-        // );
 
         // Update the target viewport, this is used if and only if fractional scaling is in use.
         if let Some(viewport) = self.viewport.as_ref() {
@@ -718,25 +716,19 @@ impl WindowState {
     pub fn set_ime_allowed(&mut self, allowed: bool) -> bool {
         self.ime_allowed = allowed;
 
-        if allowed {
-            self.maliit_ime.show();
-        } else {
-            self.maliit_ime.hide();
-        }
+        // let mut applied = false;
+        // for text_input in &self.text_inputs {
+        //     applied = true;
+        //     if allowed {
+        //         text_input.enable();
+        //         text_input.set_content_type_by_purpose(self.ime_purpose);
+        //     } else {
+        //         text_input.disable();
+        //     }
+        //     text_input.commit();
+        // }
 
-        let mut applied = false;
-        for text_input in &self.text_inputs {
-            applied = true;
-            if allowed {
-                text_input.enable();
-                text_input.set_content_type_by_purpose(self.ime_purpose);
-            } else {
-                text_input.disable();
-            }
-            text_input.commit();
-        }
-
-        applied
+        true
     }
 
     /// Set the IME position.
@@ -776,6 +768,25 @@ impl WindowState {
         if self.fractional_scale.is_none() {
             let _ = self.window.set_buffer_scale(self.scale_factor as _);
         }
+    }
+
+    pub fn set_transform(&mut self, transform: Transform) {
+        self.transform = transform;
+        if let Some(extended_surface) = self.extended_surface.as_ref() {
+            extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
+            match transform {
+                Transform::Normal | Transform::Flipped180 => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
+                },
+                Transform::_180 | Transform::_270 => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_FALSE.to_vec());
+                },
+                _ => {
+                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
+                }
+            }
+        }
+        let _ = self.window.set_buffer_transform(self.transform);
     }
 
     /// Make window background blurred
