@@ -129,13 +129,13 @@ impl MaliitInputMethod {
                                     new_size.height -= ime_size.read().unwrap().height as u32;
                                 }
                                 window_state.resize(new_size);
-                                events_sink.push_window_event(
-                                    WindowEvent::Resized(logical_to_physical_rounded(
-                                        new_size,
-                                        window_state.scale_factor(),
-                                    )),
-                                    window_id,
-                                );
+                                // events_sink.push_window_event(
+                                //     WindowEvent::Resized(logical_to_physical_rounded(
+                                //         new_size,
+                                //         window_state.scale_factor(),
+                                //     )),
+                                //     window_id,
+                                // );
                             }
                         },
                     };
