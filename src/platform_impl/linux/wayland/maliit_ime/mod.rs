@@ -86,10 +86,10 @@ impl MaliitInputMethod {
         is_events_handling_enabled.store(true, Ordering::Relaxed);
 
         std::thread::spawn(move || loop {
-            println!("Loop tick");
             if let Some(events) =
                 input_method.lock().unwrap().poll_new_events(std::time::Duration::from_millis(30))
             {
+                println!("Loop tick");
                 for event in events {
                     let mut events_sink = events_sink.lock().unwrap();
                     match event {
@@ -129,13 +129,14 @@ impl MaliitInputMethod {
                                     new_size.height -= ime_size.read().unwrap().height as u32;
                                 }
                                 window_state.resize(new_size);
-                                // events_sink.push_window_event(
-                                //     WindowEvent::Resized(logical_to_physical_rounded(
-                                //         new_size,
-                                //         window_state.scale_factor(),
-                                //     )),
-                                //     window_id,
-                                // );
+                                events_sink.push_window_event(
+                                    WindowEvent::Resized(logical_to_physical_rounded(
+                                        new_size,
+                                        window_state.scale_factor(),
+                                    )),
+                                    window_id,
+                                );
+                                println!("New size pushed");
                             }
                         },
                     };

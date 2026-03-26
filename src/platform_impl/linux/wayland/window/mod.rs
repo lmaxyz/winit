@@ -19,13 +19,14 @@ use crate::error::{ExternalError, NotSupportedError, OsError as RootOsError};
 use crate::event::{Ime, WindowEvent};
 use crate::event_loop::AsyncRequestSerial;
 use crate::platform_impl::wayland::maliit_ime::MaliitInputMethod;
+use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 use crate::platform_impl::{
     Fullscreen, MonitorHandle as PlatformMonitorHandle, OsError, PlatformIcon,
 };
-use crate::platform_impl::wayland::shell::wl_shell::window::Window as WlShellWindow;
 
 use crate::window::{
-    Cursor, CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType, WindowAttributes, WindowButtons, WindowLevel
+    Cursor, CursorGrabMode, ImePurpose, ResizeDirection, Theme, UserAttentionType,
+    WindowAttributes, WindowButtons, WindowLevel,
 };
 
 pub(crate) mod state;
@@ -84,7 +85,7 @@ impl Window {
 
         let monitor_size = match state.monitors.lock().unwrap().iter().next() {
             Some(mh) => mh.size().into(),
-            None => LogicalSize::new(800., 600.).into()
+            None => LogicalSize::new(800., 600.).into(),
         };
 
         let size: Size = attributes.inner_size.unwrap_or(monitor_size).into();
@@ -187,7 +188,12 @@ impl Window {
         let event_loop_awakener = event_loop_window_target.event_loop_awakener.clone();
         event_loop_awakener.ping();
 
-        let maliit_ime = MaliitInputMethod::new(window_id, window_state.clone(), event_loop_awakener.clone(), window_events_sink.clone());
+        let maliit_ime = MaliitInputMethod::new(
+            window_id,
+            window_state.clone(),
+            event_loop_awakener.clone(),
+            window_events_sink.clone(),
+        );
 
         Ok(Self {
             window: wl_shell_window,
@@ -553,7 +559,6 @@ impl Window {
         if window_state.ime_allowed() != allowed && window_state.set_ime_allowed(allowed) {
             let event = WindowEvent::Ime(if allowed { Ime::Enabled } else { Ime::Disabled });
             self.window_events_sink.lock().unwrap().push_window_event(event, self.window_id);
-            // self.window_events_sink.lock().unwrap().push_window_event(WindowEvent::Resized(self.inner_size()), self.window_id);
             self.event_loop_awakener.ping();
         }
     }
