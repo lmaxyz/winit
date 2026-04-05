@@ -1,7 +1,10 @@
-use tracing::{warn, debug};
+use tracing::{debug, warn};
 
 use wayland_client::{
-    delegate_dispatch, globals::{BindError, GlobalList}, protocol::{wl_shell, wl_shell_surface, wl_surface::WlSurface}, Connection, Dispatch, QueueHandle
+    delegate_dispatch,
+    globals::{BindError, GlobalList},
+    protocol::{wl_shell, wl_shell_surface, wl_surface::WlSurface},
+    Connection, Dispatch, QueueHandle,
 };
 
 use sctk::{
@@ -64,7 +67,7 @@ where
             wl_shell_surface::Event::Ping { serial } => {
                 proxy.pong(serial);
             },
-            wl_shell_surface::Event::Configure { edges: _, width:  _, height: _ } => {
+            wl_shell_surface::Event::Configure { edges: _, width: _, height: _ } => {
                 warn!("Configure event recieved.")
             },
             _ => unreachable!(),

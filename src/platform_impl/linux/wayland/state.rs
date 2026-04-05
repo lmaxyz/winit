@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-
 use ahash::AHashMap;
 use sctk::compositor::{CompositorHandler, CompositorState};
 use sctk::output::{OutputHandler, OutputState};
@@ -27,8 +26,8 @@ use crate::platform_impl::wayland::seat::{
     PointerConstraintsState, RelativePointerState, TextInputState, WinitPointerData,
     WinitPointerDataExt, WinitSeatState,
 };
-use crate::platform_impl::wayland::types::qt_surface_extension::SurfaceExtension;
 use crate::platform_impl::wayland::types::kwin_blur::KWinBlurManager;
+use crate::platform_impl::wayland::types::qt_surface_extension::SurfaceExtension;
 use crate::platform_impl::wayland::types::wp_fractional_scaling::FractionalScalingManager;
 use crate::platform_impl::wayland::types::wp_viewporter::ViewporterState;
 use crate::platform_impl::wayland::window::{WindowRequests, WindowState};
@@ -37,7 +36,6 @@ use crate::platform_impl::OsError;
 
 use crate::platform_impl::wayland::shell::wl_shell::window::WindowHandler;
 use crate::platform_impl::wayland::shell::wl_shell::WlShell;
-
 
 /// Winit's Wayland state.
 pub struct WinitState {
@@ -248,7 +246,11 @@ impl WinitState {
     pub fn transform_changed(&mut self, surface: &WlSurface, transform: Transform) {
         let window_id = super::make_wid(surface);
 
-        println!("Transform changed for window {:?}, all windows: {:?}", window_id, self.windows.borrow().keys());
+        println!(
+            "Transform changed for window {:?}, all windows: {:?}",
+            window_id,
+            self.windows.borrow().keys()
+        );
 
         if let Some(window) = self.windows.get_mut().get(&window_id) {
             let pos = if let Some(pos) = self
@@ -299,7 +301,8 @@ impl WindowHandler for WinitState {
         let window_id = super::make_wid(wl_surface);
         self.events_sink.push_window_event(crate::event::WindowEvent::Focused(focused), window_id);
 
-        let mut window_state = self.windows
+        let mut window_state = self
+            .windows
             .get_mut()
             .get_mut(&window_id)
             .expect("got configure for dead window.")
@@ -317,7 +320,7 @@ impl WindowHandler for WinitState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
         wl_surface: &WlSurface,
-        configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32)
+        configure: (wayland_client::protocol::wl_shell_surface::Resize, u32, u32),
     ) {
         let window_id = super::make_wid(wl_surface);
 
@@ -379,7 +382,12 @@ impl OutputHandler for WinitState {
             }
         }
 
-        println!("Updated output: {:?} {:?} {:?}\n", updated.position(), updated.transform(), updated.size());
+        println!(
+            "Updated output: {:?} {:?} {:?}\n",
+            updated.position(),
+            updated.transform(),
+            updated.size()
+        );
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
@@ -490,7 +498,13 @@ pub struct WindowCompositorUpdate {
 
 impl WindowCompositorUpdate {
     fn new(window_id: WindowId) -> Self {
-        Self { window_id, resized: false, scale_changed: false, transform_changed: false, close_window: false }
+        Self {
+            window_id,
+            resized: false,
+            scale_changed: false,
+            transform_changed: false,
+            close_window: false,
+        }
     }
 }
 

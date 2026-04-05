@@ -21,7 +21,9 @@ use sctk::subcompositor::SubcompositorState;
 use tracing::{info, warn};
 use wayland_client::protocol::wl_output::Transform;
 use wayland_protocols_plasma::blur::client::org_kde_kwin_blur::OrgKdeKwinBlur;
-use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{Orientation, QtExtendedSurface};
+use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{
+    Orientation, QtExtendedSurface,
+};
 
 use crate::cursor::CustomCursor as RootCustomCursor;
 use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
@@ -160,11 +162,23 @@ impl WindowState {
             .as_ref()
             .map(|fsm| fsm.fractional_scaling(window.wl_surface(), queue_handle));
 
-        let extended_surface = winit_state.surface_extension.as_ref()
+        let extended_surface = winit_state
+            .surface_extension
+            .as_ref()
             .map(|se| se.get_extended_surface(window.wl_surface(), &queue_handle));
 
-        extended_surface.as_ref().map(|es| es.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
-        extended_surface.as_ref().map(|es| es.update_generic_property("BACKGROUND_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec()));
+        extended_surface.as_ref().map(|es| {
+            es.update_generic_property(
+                "STATUSBAR_VISIBLE".to_string(),
+                Q_VARIANT_BOOL_TRUE.to_vec(),
+            )
+        });
+        extended_surface.as_ref().map(|es| {
+            es.update_generic_property(
+                "BACKGROUND_VISIBLE".to_string(),
+                Q_VARIANT_BOOL_TRUE.to_vec(),
+            )
+        });
 
         Self {
             blur: None,
@@ -199,7 +213,7 @@ impl WindowState {
             viewport,
             window,
             has_focus: false,
-            extended_surface: extended_surface,
+            extended_surface,
             transform: Transform::Normal,
         }
     }
@@ -776,14 +790,23 @@ impl WindowState {
             extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
             match transform {
                 Transform::Normal | Transform::Flipped180 => {
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
+                    extended_surface.update_generic_property(
+                        "STATUSBAR_VISIBLE".to_string(),
+                        Q_VARIANT_BOOL_TRUE.to_vec(),
+                    );
                 },
                 Transform::_180 | Transform::_270 => {
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_FALSE.to_vec());
+                    extended_surface.update_generic_property(
+                        "STATUSBAR_VISIBLE".to_string(),
+                        Q_VARIANT_BOOL_FALSE.to_vec(),
+                    );
                 },
                 _ => {
-                    extended_surface.update_generic_property("STATUSBAR_VISIBLE".to_string(), Q_VARIANT_BOOL_TRUE.to_vec());
-                }
+                    extended_surface.update_generic_property(
+                        "STATUSBAR_VISIBLE".to_string(),
+                        Q_VARIANT_BOOL_TRUE.to_vec(),
+                    );
+                },
             }
         }
         let _ = self.window.set_buffer_transform(self.transform);

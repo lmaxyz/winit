@@ -17,11 +17,10 @@ pub use window::Window;
 mod event_loop;
 mod output;
 mod seat;
+mod shell;
 mod state;
 mod types;
 mod window;
-mod shell;
-mod maliit_ime;
 
 #[derive(Debug)]
 pub enum WaylandError {
