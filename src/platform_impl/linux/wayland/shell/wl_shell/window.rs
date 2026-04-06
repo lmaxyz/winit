@@ -23,7 +23,7 @@ impl From<ResizeDirection> for Resize {
             ResizeDirection::NorthEast => Resize::TopRight,
             ResizeDirection::NorthWest => Resize::TopLeft,
             ResizeDirection::SouthEast => Resize::BottomRight,
-            ResizeDirection::SouthWest => Resize::BottomLeft
+            ResizeDirection::SouthWest => Resize::BottomLeft,
         }
     }
 }

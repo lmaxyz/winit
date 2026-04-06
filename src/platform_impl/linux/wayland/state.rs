@@ -18,7 +18,8 @@ use sctk::shell::WaylandSurface;
 use sctk::shm::slot::SlotPool;
 use sctk::shm::{Shm, ShmHandler};
 use sctk::subcompositor::SubcompositorState;
-use wayland_client::protocol::wl_output::Transform;
+// use wayland_client::protocol::wl_output::Transform;
+use tracing::debug;
 
 use crate::platform_impl::wayland::event_loop::sink::EventSink;
 use crate::platform_impl::wayland::output::MonitorHandle;
@@ -243,34 +244,34 @@ impl WinitState {
         }
     }
 
-    pub fn transform_changed(&mut self, surface: &WlSurface, transform: Transform) {
-        let window_id = super::make_wid(surface);
+    // pub fn transform_changed(&mut self, surface: &WlSurface, transform: Transform) {
+    //     let window_id = super::make_wid(surface);
 
-        println!(
-            "Transform changed for window {:?}, all windows: {:?}",
-            window_id,
-            self.windows.borrow().keys()
-        );
+    //     println!(
+    //         "Transform changed for window {:?}, all windows: {:?}",
+    //         window_id,
+    //         self.windows.borrow().keys()
+    //     );
 
-        if let Some(window) = self.windows.get_mut().get(&window_id) {
-            let pos = if let Some(pos) = self
-                .window_compositor_updates
-                .iter()
-                .position(|update| update.window_id == window_id)
-            {
-                pos
-            } else {
-                self.window_compositor_updates.push(WindowCompositorUpdate::new(window_id));
-                self.window_compositor_updates.len() - 1
-            };
+    //     if let Some(window) = self.windows.get_mut().get(&window_id) {
+    //         let pos = if let Some(pos) = self
+    //             .window_compositor_updates
+    //             .iter()
+    //             .position(|update| update.window_id == window_id)
+    //         {
+    //             pos
+    //         } else {
+    //             self.window_compositor_updates.push(WindowCompositorUpdate::new(window_id));
+    //             self.window_compositor_updates.len() - 1
+    //         };
 
-            // Update the scale factor right away.
-            window.lock().unwrap().set_transform(transform);
-            self.window_compositor_updates[pos].transform_changed = true;
-        } else {
-            println!("No window for transform changed event!!!");
-        }
-    }
+    //         // Update the scale factor right away.
+    //         window.lock().unwrap().set_transform(transform);
+    //         self.window_compositor_updates[pos].transform_changed = true;
+    //     } else {
+    //         println!("No window for transform changed event!!!");
+    //     }
+    // }
 
     pub fn queue_close(updates: &mut Vec<WindowCompositorUpdate>, window_id: WindowId) {
         let pos = if let Some(pos) = updates.iter().position(|update| update.window_id == window_id)
@@ -368,7 +369,6 @@ impl OutputHandler for WinitState {
     }
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
-        let mut monitors = self.monitors.lock().unwrap();
         let updated = MonitorHandle::new(updated);
 
         {
@@ -382,12 +382,14 @@ impl OutputHandler for WinitState {
             }
         }
 
-        println!(
+        debug!(
             "Updated output: {:?} {:?} {:?}\n",
             updated.position(),
             updated.transform(),
             updated.size()
         );
+
+        let mut monitors = self.monitors.lock().unwrap();
         if let Some(pos) = monitors.iter().position(|output| output == &updated) {
             monitors[pos] = updated
         } else {
@@ -409,10 +411,10 @@ impl CompositorHandler for WinitState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        surface: &WlSurface,
-        transform: wayland_client::protocol::wl_output::Transform,
+        _surface: &WlSurface,
+        _transform: wayland_client::protocol::wl_output::Transform,
     ) {
-        self.transform_changed(surface, transform);
+        // self.transform_changed(surface, transform);
         // TODO(kchibisov) we need to expose it somehow in winit.
     }
 
@@ -423,7 +425,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
-        println!("Surface entered\n");
+        debug!("Surface entered\n");
     }
 
     fn surface_leave(
@@ -433,7 +435,7 @@ impl CompositorHandler for WinitState {
         _: &WlSurface,
         _: &WlOutput,
     ) {
-        println!("Surface left\n");
+        debug!("Surface left\n");
     }
 
     fn scale_factor_changed(

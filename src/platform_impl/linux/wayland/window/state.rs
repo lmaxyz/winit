@@ -171,13 +171,11 @@ impl WindowState {
             es.update_generic_property(
                 "STATUSBAR_VISIBLE".to_string(),
                 Q_VARIANT_BOOL_TRUE.to_vec(),
-            )
-        });
-        extended_surface.as_ref().map(|es| {
+            );
             es.update_generic_property(
                 "BACKGROUND_VISIBLE".to_string(),
                 Q_VARIANT_BOOL_TRUE.to_vec(),
-            )
+            );
         });
 
         Self {
@@ -789,13 +787,14 @@ impl WindowState {
         if let Some(extended_surface) = self.extended_surface.as_ref() {
             extended_surface.set_content_orientation_mask(Orientation::LandscapeOrientation as _);
             match transform {
-                Transform::Normal | Transform::Flipped180 => {
+                Transform::Normal => {
                     extended_surface.update_generic_property(
                         "STATUSBAR_VISIBLE".to_string(),
                         Q_VARIANT_BOOL_TRUE.to_vec(),
                     );
                 },
-                Transform::_180 | Transform::_270 => {
+                // Hide statusbar for landscape orientation
+                Transform::_90 | Transform::_270 => {
                     extended_surface.update_generic_property(
                         "STATUSBAR_VISIBLE".to_string(),
                         Q_VARIANT_BOOL_FALSE.to_vec(),
@@ -804,7 +803,7 @@ impl WindowState {
                 _ => {
                     extended_surface.update_generic_property(
                         "STATUSBAR_VISIBLE".to_string(),
-                        Q_VARIANT_BOOL_TRUE.to_vec(),
+                        Q_VARIANT_BOOL_FALSE.to_vec(),
                     );
                 },
             }
