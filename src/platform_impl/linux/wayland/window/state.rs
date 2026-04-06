@@ -177,6 +177,10 @@ impl WindowState {
                 Q_VARIANT_BOOL_TRUE.to_vec(),
             );
             es.update_generic_property(
+                "SAILFISH_HAVE_COVER".to_string(),
+                vec![1],
+            );
+            es.update_generic_property(
                 "_APP_COVER_ACTION".to_string(),
                 "org.sailfishos.coveraction.com.lmaxyz.app.pid1.id1\ntrigger\n0\nimage://theme/icon-cover-previous\0".as_bytes().to_vec(),
             );
