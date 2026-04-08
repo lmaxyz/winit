@@ -579,6 +579,10 @@ impl Window {
         None
     }
 
+    pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
+        self.window_state.lock().unwrap().update_generic_property(name, value);
+    }
+
     #[cfg(feature = "rwh_04")]
     #[inline]
     pub fn raw_window_handle_rwh_04(&self) -> rwh_04::RawWindowHandle {

@@ -1621,6 +1621,14 @@ impl Window {
     }
 }
 
+// Aurora OS functions
+impl Window {
+    // Setups window property via qt_extended_surface interface.
+    pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
+        self.window.maybe_wait_on_main(|w| w.update_generic_property(name, value))
+    }
+}
+
 #[cfg(feature = "rwh_06")]
 impl rwh_06::HasWindowHandle for Window {
     fn window_handle(&self) -> Result<rwh_06::WindowHandle<'_>, rwh_06::HandleError> {

@@ -117,8 +117,7 @@ pub struct WinitState {
     /// Whether the user initiated a wake up.
     pub proxy_wake_up: bool,
 
-    // Surface extension
-    // Implements window close for Aurora OS
+    // Qt Surface extension
     pub surface_extension: Option<SurfaceExtension>,
 }
 

@@ -136,7 +136,8 @@ pub struct WindowState {
     /// The underlying WlShell window.
     pub window: WlShellWindow,
     has_focus: bool,
-    // QtExtendedSurface global, provides close event
+
+    // Handles window close and window visibility events for Aurora OS
     extended_surface: Option<QtExtendedSurface>,
     transform: Transform,
 }
@@ -817,6 +818,12 @@ impl WindowState {
             }
         }
         let _ = self.window.set_buffer_transform(self.transform);
+    }
+
+    pub fn update_generic_property(&mut self, name: &str, value: Vec<u8>) {
+        self.extended_surface.as_ref().map(|es| {
+            es.update_generic_property(name.to_string(), value);
+        });
     }
 
     /// Make window background blurred

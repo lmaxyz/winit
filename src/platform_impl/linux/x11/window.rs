@@ -855,6 +855,10 @@ impl UnownedWindow {
         Some(self.xconn.primary_monitor().expect("Failed to get primary monitor"))
     }
 
+    pub fn update_generic_property(&self, _name: &str, _value: Vec<u8>) {
+        // Not supported for X11
+    }
+
     #[inline]
     pub fn is_minimized(&self) -> Option<bool> {
         let atoms = self.xconn.atoms();

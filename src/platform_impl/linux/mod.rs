@@ -571,6 +571,11 @@ impl Window {
         Some(x11_or_wayland!(match self; Window(w) => w.primary_monitor()?; as MonitorHandle))
     }
 
+    pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
+        // Uses for setting up windows on Aurora OS
+        x11_or_wayland!(match self; Window(w) => w.update_generic_property(name, value))
+    }
+
     #[cfg(feature = "rwh_04")]
     #[inline]
     pub fn raw_window_handle_rwh_04(&self) -> rwh_04::RawWindowHandle {
