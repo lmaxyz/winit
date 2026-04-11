@@ -20,13 +20,13 @@ use super::app_state::ApplicationDelegate;
 use super::cursor::{default_cursor, invisible_cursor};
 use super::event::{
     code_to_key, code_to_location, create_key_event, event_mods, lalt_pressed, ralt_pressed,
-    scancode_to_physicalkey,
+    scancode_to_physicalkey, KeyEventExtra,
 };
 use super::window::WinitWindow;
 use super::DEVICE_ID;
 use crate::dpi::{LogicalPosition, LogicalSize};
 use crate::event::{
-    DeviceEvent, ElementState, Ime, Modifiers, MouseButton, MouseScrollDelta, TouchPhase,
+    DeviceEvent, ElementState, Ime, KeyEvent, Modifiers, MouseButton, MouseScrollDelta, TouchPhase,
     WindowEvent,
 };
 use crate::keyboard::{Key, KeyCode, KeyLocation, ModifiersState, NamedKey};
@@ -316,9 +316,15 @@ declare_class!(
                 // sending a `None` cursor range.
                 None
             } else {
+                // Clamp to string length to avoid NSRangeException from out-of-bounds
+                // indices sent by macOS IME (e.g. native Pinyin, see
+                // https://github.com/alacritty/alacritty/issues/8791).
+                let len = string.length();
+                let location = selected_range.location.min(len);
+                let end = selected_range.end().min(len);
                 // Convert the selected range from UTF-16 indices to UTF-8 indices.
-                let sub_string_a = unsafe { string.substringToIndex(selected_range.location) };
-                let sub_string_b = unsafe { string.substringToIndex(selected_range.end()) };
+                let sub_string_a = unsafe { string.substringToIndex(location) };
+                let sub_string_b = unsafe { string.substringToIndex(end) };
                 let lowerbound_utf8 = sub_string_a.len();
                 let upperbound_utf8 = sub_string_b.len();
                 Some((lowerbound_utf8, upperbound_utf8))
@@ -399,7 +405,7 @@ declare_class!(
                 unsafe { &*string }.to_string()
             };
 
-            let is_control = string.chars().next().map_or(false, |c| c.is_control());
+            let is_control = string.chars().next().is_some_and(|c| c.is_control());
 
             // Commit only if we have marked text.
             if unsafe { self.hasMarkedText() } && self.is_ime_enabled() && !is_control {
@@ -482,7 +488,7 @@ declare_class!(
             };
 
             if !had_ime_input || self.ivars().forward_key_to_app.get() {
-                let key_event = create_key_event(&event, true, unsafe { event.isARepeat() }, None);
+                let key_event = create_key_event(&event, true, unsafe { event.isARepeat() });
                 self.queue_event(WindowEvent::KeyboardInput {
                     device_id: DEVICE_ID,
                     event: key_event,
@@ -505,7 +511,7 @@ declare_class!(
             ) {
                 self.queue_event(WindowEvent::KeyboardInput {
                     device_id: DEVICE_ID,
-                    event: create_key_event(&event, false, false, None),
+                    event: create_key_event(&event, false, false),
                     is_synthetic: false,
                 });
             }
@@ -552,7 +558,7 @@ declare_class!(
                 .expect("could not find current event");
 
             self.update_modifiers(&event, false);
-            let event = create_key_event(&event, true, unsafe { event.isARepeat() }, None);
+            let event = create_key_event(&event, true, unsafe { event.isARepeat() });
 
             self.queue_event(WindowEvent::KeyboardInput {
                 device_id: DEVICE_ID,
@@ -933,22 +939,36 @@ impl WinitView {
                 let scancode = unsafe { ns_event.keyCode() };
                 let physical_key = scancode_to_physicalkey(scancode as u32);
 
-                // We'll correct the `is_press` later.
-                let mut event = create_key_event(ns_event, false, false, Some(physical_key));
-
-                let key = code_to_key(physical_key, scancode);
+                let logical_key = code_to_key(physical_key, scancode);
                 // Ignore processing of unknown modifiers because we can't determine whether
                 // it was pressed or release reliably.
-                let Some(event_modifier) = key_to_modifier(&key) else {
+                //
+                // Furthermore, sometimes normal keys are reported inside flagsChanged:, such as
+                // when holding Caps Lock while pressing another key, see:
+                // https://github.com/alacritty/alacritty/issues/8268
+                let Some(event_modifier) = key_to_modifier(&logical_key) else {
                     break 'send_event;
                 };
-                event.physical_key = physical_key;
-                event.logical_key = key.clone();
-                event.location = code_to_location(physical_key);
+
+                let mut event = KeyEvent {
+                    location: code_to_location(physical_key),
+                    logical_key: logical_key.clone(),
+                    physical_key,
+                    repeat: false,
+                    // We'll correct this later.
+                    state: Pressed,
+                    text: None,
+                    platform_specific: KeyEventExtra {
+                        text_with_all_modifiers: None,
+                        key_without_modifiers: logical_key.clone(),
+                    },
+                };
+
                 let location_mask = ModLocationMask::from_location(event.location);
 
                 let mut phys_mod_state = self.ivars().phys_modifiers.borrow_mut();
-                let phys_mod = phys_mod_state.entry(key).or_insert(ModLocationMask::empty());
+                let phys_mod =
+                    phys_mod_state.entry(logical_key).or_insert(ModLocationMask::empty());
 
                 let is_active = current_modifiers.state().contains(event_modifier);
                 let mut events = VecDeque::with_capacity(2);

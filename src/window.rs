@@ -884,7 +884,7 @@ impl Window {
     ///
     /// ## Platform-specific
     ///
-    /// - **iOS / Android / Web / Wayland / Orbital:** Always returns [`None`].
+    /// - **iOS / Android / Web / Orbital:** Always returns [`None`].
     #[inline]
     pub fn resize_increments(&self) -> Option<PhysicalSize<u32>> {
         let _span = tracing::debug_span!("winit::Window::resize_increments",).entered();
@@ -900,7 +900,6 @@ impl Window {
     ///
     /// - **macOS:** Increments are converted to logical size and then macOS rounds them to whole
     ///   numbers.
-    /// - **Wayland:** Not implemented.
     /// - **iOS / Android / Web / Orbital:** Unsupported.
     #[inline]
     pub fn set_resize_increments<S: Into<Size>>(&self, increments: Option<S>) {
@@ -1274,7 +1273,8 @@ impl Window {
     ///
     /// - **macOS:** IME must be enabled to receive text-input where dead-key sequences are
     ///   combined.
-    /// - **iOS / Android / Web / Orbital:** Unsupported.
+    /// - **iOS / Android:** This will show / hide the soft keyboard.
+    /// - **Web / Orbital:** Unsupported.
     /// - **X11**: Enabling IME will disable dead keys reporting during compose.
     ///
     /// [`Ime`]: crate::event::WindowEvent::Ime
@@ -1714,8 +1714,7 @@ pub enum CursorGrabMode {
     ///
     /// ## Platform-specific
     ///
-    /// - **X11 / Windows:** Not implemented. Always returns [`ExternalError::NotSupported`] for
-    ///   now.
+    /// - **X11:** Not implemented. Always returns [`ExternalError::NotSupported`] for now.
     /// - **iOS / Android:** Always returns an [`ExternalError::NotSupported`].
     Locked,
 }
@@ -1833,10 +1832,11 @@ pub enum WindowLevel {
 /// ## Platform-specific
 ///
 /// - **iOS / Android / Web / Windows / X11 / macOS / Orbital:** Unsupported.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
 #[non_exhaustive]
 pub enum ImePurpose {
     /// No special hints for the IME (default).
+    #[default]
     Normal,
     /// The IME is used for password input.
     Password,
@@ -1846,22 +1846,39 @@ pub enum ImePurpose {
     Terminal,
 }
 
-impl Default for ImePurpose {
-    fn default() -> Self {
-        Self::Normal
-    }
-}
-
 /// An opaque token used to activate the [`Window`].
 ///
 /// [`Window`]: crate::window::Window
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ActivationToken {
-    pub(crate) _token: String,
+    pub(crate) token: String,
 }
 
 impl ActivationToken {
-    pub(crate) fn _new(_token: String) -> Self {
-        Self { _token }
+    /// Make an [`ActivationToken`] from a string.
+    ///
+    /// This method should be used to wrap tokens passed by side channels to your application, like
+    /// dbus.
+    ///
+    /// The validity of the token is ensured by the windowing system. Using the invalid token will
+    /// only result in the side effect of the operation involving it being ignored (e.g. window
+    /// won't get focused automatically), but won't yield any errors.
+    ///
+    /// To obtain a valid token, use
+    #[cfg_attr(
+        any(x11_platform, wayland_platform, docsrs),
+        doc = " [`request_activation_token`](crate::platform::startup_notify::WindowExtStartupNotify::request_activation_token)."
+    )]
+    #[cfg_attr(
+        not(any(x11_platform, wayland_platform, docsrs)),
+        doc = " `request_activation_token`."
+    )]
+    pub fn from_raw(token: String) -> Self {
+        Self { token }
+    }
+
+    /// Convert the token to its string representation to later pass via IPC.
+    pub fn into_raw(self) -> String {
+        self.token
     }
 }

@@ -7,7 +7,7 @@ use std::{io, mem, ptr};
 
 use crate::utils::Lazy;
 use windows_sys::core::{HRESULT, PCWSTR};
-use windows_sys::Win32::Foundation::{BOOL, HANDLE, HMODULE, HWND, RECT};
+use windows_sys::Win32::Foundation::{BOOL, HANDLE, HMODULE, HWND, POINT, RECT};
 use windows_sys::Win32::Graphics::Gdi::{ClientToScreen, HMONITOR};
 use windows_sys::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryA};
 use windows_sys::Win32::System::SystemServices::IMAGE_DOS_HEADER;
@@ -17,9 +17,9 @@ use windows_sys::Win32::UI::HiDpi::{
 use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
 use windows_sys::Win32::UI::Input::Pointer::{POINTER_INFO, POINTER_PEN_INFO, POINTER_TOUCH_INFO};
 use windows_sys::Win32::UI::WindowsAndMessaging::{
-    ClipCursor, GetClientRect, GetClipCursor, GetSystemMetrics, GetWindowPlacement, GetWindowRect,
-    IsIconic, ShowCursor, IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM,
-    IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT,
+    ClipCursor, GetClientRect, GetClipCursor, GetCursorPos, GetSystemMetrics, GetWindowPlacement,
+    GetWindowRect, IsIconic, ShowCursor, IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP,
+    IDC_IBEAM, IDC_NO, IDC_SIZEALL, IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_WAIT,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SW_MAXIMIZE,
     WINDOWPLACEMENT,
 };
@@ -96,6 +96,13 @@ pub fn set_cursor_hidden(hidden: bool) {
     let changed = HIDDEN.swap(hidden, Ordering::SeqCst) ^ hidden;
     if changed {
         unsafe { ShowCursor(BOOL::from(!hidden)) };
+    }
+}
+
+pub fn get_cursor_position() -> Result<POINT, io::Error> {
+    unsafe {
+        let mut point: POINT = mem::zeroed();
+        win_to_err(GetCursorPos(&mut point)).map(|_| point)
     }
 }
 
@@ -221,31 +228,31 @@ pub type GetDpiForMonitor = unsafe extern "system" fn(
 pub type EnableNonClientDpiScaling = unsafe extern "system" fn(hwnd: HWND) -> BOOL;
 pub type AdjustWindowRectExForDpi = unsafe extern "system" fn(
     rect: *mut RECT,
-    dwStyle: u32,
-    bMenu: BOOL,
-    dwExStyle: u32,
+    dw_style: u32,
+    b_menu: BOOL,
+    dw_ex_style: u32,
     dpi: u32,
 ) -> BOOL;
 
 pub type GetPointerFrameInfoHistory = unsafe extern "system" fn(
-    pointerId: u32,
-    entriesCount: *mut u32,
-    pointerCount: *mut u32,
-    pointerInfo: *mut POINTER_INFO,
+    pointer_id: u32,
+    entries_count: *mut u32,
+    pointer_count: *mut u32,
+    pointer_info: *mut POINTER_INFO,
 ) -> BOOL;
 
-pub type SkipPointerFrameMessages = unsafe extern "system" fn(pointerId: u32) -> BOOL;
+pub type SkipPointerFrameMessages = unsafe extern "system" fn(pointer_id: u32) -> BOOL;
 pub type GetPointerDeviceRects = unsafe extern "system" fn(
     device: HANDLE,
-    pointerDeviceRect: *mut RECT,
-    displayRect: *mut RECT,
+    pointer_device_rect: *mut RECT,
+    display_rect: *mut RECT,
 ) -> BOOL;
 
 pub type GetPointerTouchInfo =
-    unsafe extern "system" fn(pointerId: u32, touchInfo: *mut POINTER_TOUCH_INFO) -> BOOL;
+    unsafe extern "system" fn(pointer_id: u32, touch_info: *mut POINTER_TOUCH_INFO) -> BOOL;
 
 pub type GetPointerPenInfo =
-    unsafe extern "system" fn(pointId: u32, penInfo: *mut POINTER_PEN_INFO) -> BOOL;
+    unsafe extern "system" fn(point_id: u32, pen_info: *mut POINTER_PEN_INFO) -> BOOL;
 
 pub(crate) static GET_DPI_FOR_WINDOW: Lazy<Option<GetDpiForWindow>> =
     Lazy::new(|| get_function!("user32.dll", GetDpiForWindow));

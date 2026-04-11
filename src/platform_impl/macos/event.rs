@@ -92,17 +92,12 @@ fn get_logical_key_char(ns_event: &NSEvent, modifierless_chars: &str) -> Key {
 /// Create `KeyEvent` for the given `NSEvent`.
 ///
 /// This function shouldn't be called when the IME input is in process.
-pub(crate) fn create_key_event(
-    ns_event: &NSEvent,
-    is_press: bool,
-    is_repeat: bool,
-    key_override: Option<PhysicalKey>,
-) -> KeyEvent {
+pub(crate) fn create_key_event(ns_event: &NSEvent, is_press: bool, is_repeat: bool) -> KeyEvent {
     use ElementState::{Pressed, Released};
     let state = if is_press { Pressed } else { Released };
 
     let scancode = unsafe { ns_event.keyCode() };
-    let mut physical_key = key_override.unwrap_or_else(|| scancode_to_physicalkey(scancode as u32));
+    let mut physical_key = scancode_to_physicalkey(scancode as u32);
 
     // NOTE: The logical key should heed both SHIFT and ALT if possible.
     // For instance:
@@ -111,20 +106,15 @@ pub(crate) fn create_key_event(
     // * Pressing CTRL SHIFT A: logical key should also be "A"
     // This is not easy to tease out of `NSEvent`, but we do our best.
 
-    let text_with_all_modifiers: Option<SmolStr> = if key_override.is_some() {
+    let characters = unsafe { ns_event.characters() }.map(|s| s.to_string()).unwrap_or_default();
+    let text_with_all_modifiers = if characters.is_empty() {
         None
     } else {
-        let characters =
-            unsafe { ns_event.characters() }.map(|s| s.to_string()).unwrap_or_default();
-        if characters.is_empty() {
-            None
-        } else {
-            if matches!(physical_key, PhysicalKey::Unidentified(_)) {
-                // The key may be one of the funky function keys
-                physical_key = extra_function_key_to_code(scancode, &characters);
-            }
-            Some(SmolStr::new(characters))
+        if matches!(physical_key, PhysicalKey::Unidentified(_)) {
+            // The key may be one of the funky function keys
+            physical_key = extra_function_key_to_code(scancode, &characters);
         }
+        Some(SmolStr::new(characters))
     };
 
     let key_from_code = code_to_key(physical_key, scancode);
@@ -138,7 +128,7 @@ pub(crate) fn create_key_event(
 
         let logical_key = match text_with_all_modifiers.as_ref() {
             // Only checking for ctrl and cmd here, not checking for alt because we DO want to
-            // include its effect in the key. For example if -on the Germay layout- one
+            // include its effect in the key. For example if -on the German layout- one
             // presses alt+8, the logical key should be "{"
             // Also not checking if this is a release event because then this issue would
             // still affect the key release.

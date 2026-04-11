@@ -16,11 +16,11 @@ use core_foundation::runloop::{
 };
 use objc2::rc::{autoreleasepool, Retained};
 use objc2::runtime::ProtocolObject;
-use objc2::{msg_send_id, sel, ClassType};
+use objc2::sel;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSWindow};
 use objc2_foundation::{MainThreadMarker, NSObjectProtocol};
 
-use super::app::WinitApplication;
+use super::app::override_send_event;
 use super::app_state::{ApplicationDelegate, HandlePendingUserEvents};
 use super::event::dummy_event;
 use super::monitor::{self, MonitorHandle};
@@ -202,18 +202,14 @@ pub struct EventLoop<T: 'static> {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct PlatformSpecificEventLoopAttributes {
-    pub(crate) activation_policy: ActivationPolicy,
+    pub(crate) activation_policy: Option<ActivationPolicy>,
     pub(crate) default_menu: bool,
     pub(crate) activate_ignoring_other_apps: bool,
 }
 
 impl Default for PlatformSpecificEventLoopAttributes {
     fn default() -> Self {
-        Self {
-            activation_policy: Default::default(), // Regular
-            default_menu: true,
-            activate_ignoring_other_apps: true,
-        }
+        Self { activation_policy: None, default_menu: true, activate_ignoring_other_apps: true }
     }
 }
 
@@ -224,20 +220,14 @@ impl<T> EventLoop<T> {
         let mtm = MainThreadMarker::new()
             .expect("on macOS, `EventLoop` must be created on the main thread!");
 
-        let app: Retained<NSApplication> =
-            unsafe { msg_send_id![WinitApplication::class(), sharedApplication] };
-
-        if !app.is_kind_of::<WinitApplication>() {
-            panic!(
-                "`winit` requires control over the principal class. You must create the event \
-                 loop before other parts of your application initialize NSApplication"
-            );
-        }
+        // Initialize the application (if it has not already been).
+        let app = NSApplication::sharedApplication(mtm);
 
         let activation_policy = match attributes.activation_policy {
-            ActivationPolicy::Regular => NSApplicationActivationPolicy::Regular,
-            ActivationPolicy::Accessory => NSApplicationActivationPolicy::Accessory,
-            ActivationPolicy::Prohibited => NSApplicationActivationPolicy::Prohibited,
+            None => None,
+            Some(ActivationPolicy::Regular) => Some(NSApplicationActivationPolicy::Regular),
+            Some(ActivationPolicy::Accessory) => Some(NSApplicationActivationPolicy::Accessory),
+            Some(ActivationPolicy::Prohibited) => Some(NSApplicationActivationPolicy::Prohibited),
         };
         let delegate = ApplicationDelegate::new(
             mtm,
@@ -249,6 +239,9 @@ impl<T> EventLoop<T> {
         autoreleasepool(|_| {
             app.setDelegate(Some(ProtocolObject::from_ref(&*delegate)));
         });
+
+        // Override `sendEvent:` on the application to forward to our application state.
+        override_send_event(&app);
 
         let panic_info: Rc<PanicInfo> = Default::default();
         setup_control_flow_observers(mtm, Rc::downgrade(&panic_info));
@@ -422,6 +415,22 @@ pub(super) fn stop_app_immediately(app: &NSApplication) {
         // See: https://stackoverflow.com/questions/48041279/stopping-the-nsapplication-main-event-loop/48064752#48064752
         app.postEvent_atStart(&dummy_event().unwrap(), true);
     });
+}
+
+/// Tell all windows to close.
+///
+/// This will synchronously trigger `WindowEvent::Destroyed` within
+/// `windowWillClose:`, giving the application one last chance to handle
+/// those events. It doesn't matter if the user also ends up closing the
+/// windows in `Window`'s `Drop` impl, once a window has been closed once, it
+/// stays closed.
+///
+/// This ensures that no windows linger on after the event loop has exited,
+/// see <https://github.com/rust-windowing/winit/issues/4135>.
+pub(super) fn notify_windows_of_exit(app: &NSApplication) {
+    for window in app.windows() {
+        window.close();
+    }
 }
 
 /// Catches panics that happen inside `f` and when a panic

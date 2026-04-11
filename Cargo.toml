@@ -1,17 +1,27 @@
 [package]
-authors = ["The winit contributors", "Pierre Krieger <pierre.krieger1708@gmail.com>"]
-categories = ["gui"]
-description = "Cross-platform window creation library."
-documentation = "https://docs.rs/winit"
-edition.workspace = true
-exclude = ["/.cargo"]
-keywords = ["windowing"]
-license.workspace = true
 name = "winit"
+version = "0.30.13"
+authors = [
+    "The winit contributors",
+    "Pierre Krieger <pierre.krieger1708@gmail.com>",
+]
+description = "Cross-platform window creation library."
+keywords = ["windowing"]
 readme = "README.md"
-repository.workspace = true
-rust-version.workspace = true
-version = "0.30.12"
+documentation = "https://docs.rs/winit"
+categories = ["gui"]
+edition.workspace = true
+include = [
+    "/build.rs",
+    "/docs",
+    "/examples",
+    "/FEATURES.md",
+    "/LICENSE",
+    "/src",
+    "!/src/platform_impl/web/script",
+    "/src/platform_impl/web/script/**/*.min.js",
+    "/tests",
+]
 
 [package.metadata.docs.rs]
 features = [
@@ -100,11 +110,11 @@ android-activity = "0.6.0"
 ndk = { version = "0.9.0", default-features = false }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+block2 = "0.5.1"
 core-foundation = "0.9.3"
-objc2 = "0.5.2"
+objc2 = { version = "0.5.2", features = ["relax-sign-encoding"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-block2 = "0.5.1"
 core-graphics = "0.23.1"
 
 [target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
@@ -162,11 +172,13 @@ version = "0.2.2"
 
 [target.'cfg(target_os = "ios")'.dependencies.objc2-foundation]
 features = [
+    "block2",
     "dispatch",
     "NSArray",
     "NSEnumerator",
     "NSGeometry",
     "NSObjCRuntime",
+    "NSOperation",
     "NSString",
     "NSProcessInfo",
     "NSThread",
@@ -181,6 +193,8 @@ features = [
     "UIEvent",
     "UIGeometry",
     "UIGestureRecognizer",
+    "UITextInput",
+    "UITextInputTraits",
     "UIOrientation",
     "UIPanGestureRecognizer",
     "UIPinchGestureRecognizer",
@@ -212,6 +226,7 @@ features = [
     "Win32_System_Com",
     "Win32_System_LibraryLoader",
     "Win32_System_Ole",
+    "Win32_Security",
     "Win32_System_SystemInformation",
     "Win32_System_SystemServices",
     "Win32_System_Threading",
@@ -246,12 +261,16 @@ sctk = { package = "smithay-client-toolkit", version = "0.19.2", default-feature
     "calloop",
 ], optional = true }
 sctk-adwaita = { version = "0.10.1", default-features = false, optional = true }
-wayland-backend = { version = "0.3.5", default-features = false, features = [
+wayland-backend = { version = "0.3.10", default-features = false, features = [
     "client_system",
 ], optional = true }
-wayland-client = { version = "0.31.4", optional = true }
-wayland-protocols = { version = "0.32.2", features = ["staging"], optional = true }
-wayland-protocols-plasma = { version = "0.3.2", features = ["client"], optional = true }
+wayland-client = { version = "0.31.10", optional = true }
+wayland-protocols = { version = "0.32.8", features = [
+    "staging",
+], optional = true }
+wayland-protocols-plasma = { version = "0.3.8", features = [
+    "client",
+], optional = true }
 x11-dl = { version = "2.19.1", optional = true }
 x11rb = { version = "0.13.0", default-features = false, features = [
     "allow-unsafe-code",
@@ -267,60 +286,63 @@ xkbcommon-dl = "0.4.2"
 orbclient = { version = "0.3.47", default-features = false }
 redox_syscall = "0.4.1"
 
-[target.'cfg(target_family = "wasm")'.dependencies.web_sys]
-features = [
-    'AbortController',
-    'AbortSignal',
-    'Blob',
-    'BlobPropertyBag',
-    'console',
-    'CssStyleDeclaration',
-    'Document',
-    'DomException',
-    'DomRect',
-    'DomRectReadOnly',
-    'Element',
-    'Event',
-    'EventTarget',
-    'FocusEvent',
-    'HtmlCanvasElement',
-    'HtmlElement',
-    'HtmlImageElement',
-    'ImageBitmap',
-    'ImageBitmapOptions',
-    'ImageBitmapRenderingContext',
-    'ImageData',
-    'IntersectionObserver',
-    'IntersectionObserverEntry',
-    'KeyboardEvent',
-    'MediaQueryList',
-    'MessageChannel',
-    'MessagePort',
-    'Navigator',
-    'Node',
-    'PageTransitionEvent',
-    'PointerEvent',
-    'PremultiplyAlpha',
-    'ResizeObserver',
-    'ResizeObserverBoxOptions',
-    'ResizeObserverEntry',
-    'ResizeObserverOptions',
-    'ResizeObserverSize',
-    'VisibilityState',
-    'Window',
-    'WheelEvent',
-    'Worker',
-    'Url',
-]
-package = "web-sys"
-version = "0.3.64"
-
 [target.'cfg(target_family = "wasm")'.dependencies]
-js-sys = "0.3.64"
+js-sys = "0.3.70"
 pin-project = "1"
-wasm-bindgen = "0.2"
-wasm-bindgen-futures = "0.4"
+wasm-bindgen = "0.2.93"
+wasm-bindgen-futures = "0.4.43"
 web-time = "1"
+web_sys = { package = "web-sys", version = "0.3.70", features = [
+    "AbortController",
+    "AbortSignal",
+    "Blob",
+    "BlobPropertyBag",
+    "console",
+    "CssStyleDeclaration",
+    "Document",
+    "DomException",
+    "DomRect",
+    "DomRectReadOnly",
+    "Element",
+    "Event",
+    "EventTarget",
+    "FocusEvent",
+    "HtmlCanvasElement",
+    "HtmlElement",
+    "HtmlImageElement",
+    "ImageBitmap",
+    "ImageBitmapOptions",
+    "ImageBitmapRenderingContext",
+    "ImageData",
+    "IntersectionObserver",
+    "IntersectionObserverEntry",
+    "KeyboardEvent",
+    "MediaQueryList",
+    "MessageChannel",
+    "MessagePort",
+    "Navigator",
+    "Node",
+    "OrientationLockType",
+    "OrientationType",
+    "PageTransitionEvent",
+    "Permissions",
+    "PermissionState",
+    "PermissionStatus",
+    "PointerEvent",
+    "PremultiplyAlpha",
+    "ResizeObserver",
+    "ResizeObserverBoxOptions",
+    "ResizeObserverEntry",
+    "ResizeObserverOptions",
+    "ResizeObserverSize",
+    "Screen",
+    "ScreenOrientation",
+    "Url",
+    "VisibilityState",
+    "WheelEvent",
+    "Window",
+    "Worker",
+] }
 
 [target.'cfg(all(target_family = "wasm", target_feature = "atomics"))'.dependencies]
 atomic-waker = "1"

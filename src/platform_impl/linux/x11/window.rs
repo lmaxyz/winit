@@ -8,9 +8,8 @@ use std::{cmp, env};
 use tracing::{debug, info, warn};
 use x11rb::connection::Connection;
 use x11rb::properties::{WmHints, WmSizeHints, WmSizeHintsSpecification};
-use x11rb::protocol::shape::SK;
-use x11rb::protocol::xfixes::{ConnectionExt, RegionWrapper};
-use x11rb::protocol::xproto::{self, ConnectionExt as _, Rectangle};
+use x11rb::protocol::shape::{ConnectionExt as ShapeExt, SK, SO};
+use x11rb::protocol::xproto::{self, ClipOrdering, ConnectionExt as _, Rectangle};
 use x11rb::protocol::{randr, xinput};
 
 use crate::cursor::{Cursor, CustomCursor as RootCustomCursor};
@@ -144,12 +143,26 @@ impl UnownedWindow {
     ) -> Result<UnownedWindow, RootOsError> {
         let xconn = &event_loop.xconn;
         let atoms = xconn.atoms();
+
+        let screen_id = match window_attrs.platform_specific.x11.screen_id {
+            Some(id) => id,
+            None => xconn.default_screen_index() as c_int,
+        };
+
+        let screen = {
+            let screen_id_usize = usize::try_from(screen_id)
+                .map_err(|_| os_error!(OsError::Misc("screen id must be non-negative")))?;
+            xconn.xcb_connection().setup().roots.get(screen_id_usize).ok_or(os_error!(
+                OsError::Misc("requested screen id not present in server's response")
+            ))?
+        };
+
         #[cfg(feature = "rwh_06")]
         let root = match window_attrs.parent_window.as_ref().map(|handle| handle.0) {
             Some(rwh_06::RawWindowHandle::Xlib(handle)) => handle.window as xproto::Window,
             Some(rwh_06::RawWindowHandle::Xcb(handle)) => handle.window.get(),
             Some(raw) => unreachable!("Invalid raw window handle {raw:?} on X11"),
-            None => event_loop.root,
+            None => screen.root,
         };
         #[cfg(not(feature = "rwh_06"))]
         let root = event_loop.root;
@@ -207,18 +220,10 @@ impl UnownedWindow {
             dimensions
         };
 
-        let screen_id = match window_attrs.platform_specific.x11.screen_id {
-            Some(id) => id,
-            None => xconn.default_screen_index() as c_int,
-        };
-
-        // An iterator over all of the visuals combined with their depths.
-        let mut all_visuals = xconn
-            .xcb_connection()
-            .setup()
-            .roots
+        // An iterator over the visuals matching screen id combined with their depths.
+        let mut all_visuals = screen
+            .allowed_depths
             .iter()
-            .flat_map(|root| &root.allowed_depths)
             .flat_map(|depth| depth.visuals.iter().map(move |visual| (visual, depth.depth)));
 
         // creating
@@ -484,6 +489,20 @@ impl UnownedWindow {
             );
             leap!(result).ignore_error();
 
+            // Select XInput2 events
+            let mask = xinput::XIEventMask::MOTION
+                | xinput::XIEventMask::BUTTON_PRESS
+                | xinput::XIEventMask::BUTTON_RELEASE
+                | xinput::XIEventMask::ENTER
+                | xinput::XIEventMask::LEAVE
+                | xinput::XIEventMask::FOCUS_IN
+                | xinput::XIEventMask::FOCUS_OUT
+                | xinput::XIEventMask::TOUCH_BEGIN
+                | xinput::XIEventMask::TOUCH_UPDATE
+                | xinput::XIEventMask::TOUCH_END;
+            leap!(xconn.select_xinput_events(window.xwindow, super::ALL_MASTER_DEVICES, mask))
+                .ignore_error();
+
             // Set visibility (map window)
             if window_attrs.visible {
                 leap!(xconn.xcb_connection().map_window(window.xwindow)).ignore_error();
@@ -506,20 +525,6 @@ impl UnownedWindow {
                     return Err(os_error!(OsError::Misc("`XkbSetDetectableAutoRepeat` failed")));
                 }
             }
-
-            // Select XInput2 events
-            let mask = xinput::XIEventMask::MOTION
-                | xinput::XIEventMask::BUTTON_PRESS
-                | xinput::XIEventMask::BUTTON_RELEASE
-                | xinput::XIEventMask::ENTER
-                | xinput::XIEventMask::LEAVE
-                | xinput::XIEventMask::FOCUS_IN
-                | xinput::XIEventMask::FOCUS_OUT
-                | xinput::XIEventMask::TOUCH_BEGIN
-                | xinput::XIEventMask::TOUCH_UPDATE
-                | xinput::XIEventMask::TOUCH_END;
-            leap!(xconn.select_xinput_events(window.xwindow, super::ALL_MASTER_DEVICES, mask))
-                .ignore_error();
 
             // Try to create input context for the window.
             if let Some(ime) = event_loop.ime.as_ref() {
@@ -553,7 +558,7 @@ impl UnownedWindow {
 
         // Remove the startup notification if we have one.
         if let Some(startup) = window_attrs.platform_specific.activation_token.as_ref() {
-            leap!(xconn.remove_activation_token(xwindow, &startup._token));
+            leap!(xconn.remove_activation_token(xwindow, &startup.token));
         }
 
         // We never want to give the user a broken window, since by then, it's too late to handle.
@@ -974,8 +979,8 @@ impl UnownedWindow {
         let vert_atom = atoms[_NET_WM_STATE_MAXIMIZED_VERT];
         match state {
             Ok(atoms) => {
-                let horz_maximized = atoms.iter().any(|atom: &xproto::Atom| *atom == horz_atom);
-                let vert_maximized = atoms.iter().any(|atom: &xproto::Atom| *atom == vert_atom);
+                let horz_maximized = atoms.contains(&horz_atom);
+                let vert_maximized = atoms.contains(&vert_atom);
                 horz_maximized && vert_maximized
             },
             _ => false,
@@ -1490,6 +1495,11 @@ impl UnownedWindow {
 
     #[inline]
     pub fn set_cursor_grab(&self, mode: CursorGrabMode) -> Result<(), ExternalError> {
+        // We don't support the locked cursor yet, so ignore it early on.
+        if mode == CursorGrabMode::Locked {
+            return Err(ExternalError::NotSupported(NotSupportedError::new()));
+        }
+
         let mut grabbed_lock = self.cursor_grabbed_mode.lock().unwrap();
         if mode == *grabbed_lock {
             return Ok(());
@@ -1501,40 +1511,40 @@ impl UnownedWindow {
             .xcb_connection()
             .ungrab_pointer(x11rb::CURRENT_TIME)
             .expect_then_ignore_error("Failed to call `xcb_ungrab_pointer`");
+        *grabbed_lock = CursorGrabMode::None;
 
         let result = match mode {
             CursorGrabMode::None => self.xconn.flush_requests().map_err(|err| {
                 ExternalError::Os(os_error!(OsError::XError(X11Error::Xlib(err).into())))
             }),
             CursorGrabMode::Confined => {
-                let result = {
-                    self.xconn
-                        .xcb_connection()
-                        .grab_pointer(
-                            true as _,
-                            self.xwindow,
-                            xproto::EventMask::BUTTON_PRESS
-                                | xproto::EventMask::BUTTON_RELEASE
-                                | xproto::EventMask::ENTER_WINDOW
-                                | xproto::EventMask::LEAVE_WINDOW
-                                | xproto::EventMask::POINTER_MOTION
-                                | xproto::EventMask::POINTER_MOTION_HINT
-                                | xproto::EventMask::BUTTON1_MOTION
-                                | xproto::EventMask::BUTTON2_MOTION
-                                | xproto::EventMask::BUTTON3_MOTION
-                                | xproto::EventMask::BUTTON4_MOTION
-                                | xproto::EventMask::BUTTON5_MOTION
-                                | xproto::EventMask::KEYMAP_STATE,
-                            xproto::GrabMode::ASYNC,
-                            xproto::GrabMode::ASYNC,
-                            self.xwindow,
-                            0u32,
-                            x11rb::CURRENT_TIME,
-                        )
-                        .expect("Failed to call `grab_pointer`")
-                        .reply()
-                        .expect("Failed to receive reply from `grab_pointer`")
-                };
+                let result = self
+                    .xconn
+                    .xcb_connection()
+                    .grab_pointer(
+                        true as _,
+                        self.xwindow,
+                        xproto::EventMask::BUTTON_PRESS
+                            | xproto::EventMask::BUTTON_RELEASE
+                            | xproto::EventMask::ENTER_WINDOW
+                            | xproto::EventMask::LEAVE_WINDOW
+                            | xproto::EventMask::POINTER_MOTION
+                            | xproto::EventMask::POINTER_MOTION_HINT
+                            | xproto::EventMask::BUTTON1_MOTION
+                            | xproto::EventMask::BUTTON2_MOTION
+                            | xproto::EventMask::BUTTON3_MOTION
+                            | xproto::EventMask::BUTTON4_MOTION
+                            | xproto::EventMask::BUTTON5_MOTION
+                            | xproto::EventMask::KEYMAP_STATE,
+                        xproto::GrabMode::ASYNC,
+                        xproto::GrabMode::ASYNC,
+                        self.xwindow,
+                        0u32,
+                        x11rb::CURRENT_TIME,
+                    )
+                    .expect("Failed to call `grab_pointer`")
+                    .reply()
+                    .expect("Failed to receive reply from `grab_pointer`");
 
                 match result.status {
                     xproto::GrabStatus::SUCCESS => Ok(()),
@@ -1554,9 +1564,7 @@ impl UnownedWindow {
                 }
                 .map_err(|err| ExternalError::Os(os_error!(OsError::Misc(err))))
             },
-            CursorGrabMode::Locked => {
-                return Err(ExternalError::NotSupported(NotSupportedError::new()));
-            },
+            CursorGrabMode::Locked => return Ok(()),
         };
 
         if result.is_ok() {
@@ -1617,6 +1625,15 @@ impl UnownedWindow {
 
     #[inline]
     pub fn set_cursor_hittest(&self, hittest: bool) -> Result<(), ExternalError> {
+        // Implement cursor hittest for X11 by either setting an empty or full window input shape.
+
+        // In X11, every window has two "shapes":
+        //   * Bounding shape: defines the visible outline of the window.
+        //   * Input shape: defines the region of the window that receives pointer/keyboard events.
+        // If the input shape is the full window rectangle, the window behaves normally.
+        // If the input shape is empty, the window is completely click‑through.
+        // Here, we implement hit test by mapping `hittest = true` to "restore a full input shape"
+        // and `hittest = false` to "clear the input shape" (empty list of rectangles).
         let mut rectangles: Vec<Rectangle> = Vec::new();
         if hittest {
             let size = self.inner_size();
@@ -1627,11 +1644,18 @@ impl UnownedWindow {
                 height: size.height as u16,
             })
         }
-        let region = RegionWrapper::create_region(self.xconn.xcb_connection(), &rectangles)
-            .map_err(|_e| ExternalError::Ignored)?;
+
         self.xconn
             .xcb_connection()
-            .xfixes_set_window_shape_region(self.xwindow, SK::INPUT, 0, 0, region.region())
+            .shape_rectangles(
+                SO::SET,
+                SK::INPUT,
+                ClipOrdering::UNSORTED,
+                self.xwindow,
+                0,
+                0,
+                &rectangles,
+            )
             .map_err(|_e| ExternalError::Ignored)?;
         self.shared_state_lock().cursor_hittest = Some(hittest);
         Ok(())

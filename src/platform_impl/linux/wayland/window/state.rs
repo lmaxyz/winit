@@ -26,7 +26,7 @@ use wayland_protocols_plasma::surface_extension::client::qt_extended_surface::{
 };
 
 use crate::cursor::CustomCursor as RootCustomCursor;
-use crate::dpi::{LogicalPosition, LogicalSize, PhysicalSize, Size};
+use crate::dpi::{LogicalPosition, LogicalSize, PhysicalPosition, PhysicalSize, Size};
 use crate::error::{ExternalError, NotSupportedError};
 use crate::platform_impl::wayland::logical_to_physical_rounded;
 use crate::platform_impl::wayland::seat::{
@@ -112,6 +112,7 @@ pub struct WindowState {
     /// Min size.
     min_inner_size: LogicalSize<u32>,
     max_inner_size: Option<LogicalSize<u32>>,
+    resize_increments: Option<LogicalSize<u32>>,
 
     /// The size of the window when no states were applied to it. The primary use for it
     /// is to fallback to original window size, before it was maximized, if the compositor
@@ -182,6 +183,7 @@ impl WindowState {
             last_configure: None,
             max_inner_size: None,
             min_inner_size: MIN_WINDOW_SIZE,
+            resize_increments: None,
             pointer_constraints,
             pointers: Default::default(),
             queue_handle: queue_handle.clone(),
@@ -204,9 +206,9 @@ impl WindowState {
     }
 
     /// Apply closure on the given pointer.
-    fn apply_on_pointer<F: Fn(&ThemedPointer<WinitPointerData>, &WinitPointerData)>(
+    fn apply_on_pointer<F: FnMut(&ThemedPointer<WinitPointerData>, &WinitPointerData)>(
         &self,
-        callback: F,
+        mut callback: F,
     ) {
         self.pointers.iter().filter_map(Weak::upgrade).for_each(|pointer| {
             let data = pointer.pointer().winit_data();
@@ -272,6 +274,42 @@ impl WindowState {
                 .1
                 .map(|bound_h| new_size.height.min(bound_h.get()))
                 .unwrap_or(new_size.height);
+        }
+
+        // Apply size increments.
+        //
+        // We conditionally apply increments to avoid conflicts with the compositor's layout rules:
+        // 1. If the window is floating (constrain == true), we snap to increments to ensure the
+        //    app's grid alignment.
+        // 2. If the user is interactively resizing (is_resizing), we snap the size to provide
+        //    feedback.
+        //
+        // However, we MUST NOT snap if the compositor enforces a specific size (constrain == false,
+        // or states like Maximized/Tiled). Snapping in these cases (e.g. corner tiling) would
+        // shrink the window below the allocated area, creating visible gaps between valid
+        // windows or screen edges.
+        if (constrain || configure.is_resizing())
+            && !configure.is_maximized()
+            && !configure.is_fullscreen()
+            && !configure.is_tiled()
+        {
+            if let Some(increments) = self.resize_increments {
+                // We use min size as a base size for the increments, similar to how X11 does it.
+                //
+                // This ensures that we can always reach the min size and the increments are
+                // calculated from it.
+                let (delta_width, delta_height) = (
+                    new_size.width.saturating_sub(self.min_inner_size.width),
+                    new_size.height.saturating_sub(self.min_inner_size.height),
+                );
+
+                let width =
+                    self.min_inner_size.width + (delta_width / increments.width) * increments.width;
+                let height = self.min_inner_size.height
+                    + (delta_height / increments.height) * increments.height;
+
+                new_size = (width, height).into();
+            }
         }
 
         let new_state = configure.state;
@@ -540,18 +578,39 @@ impl WindowState {
         self.selected_cursor = SelectedCursor::Custom(cursor);
     }
 
+    /// Set the resize increments of the window.
+    pub fn set_resize_increments(&mut self, increments: Option<LogicalSize<u32>>) {
+        self.resize_increments = increments;
+        // NOTE: We don't update the window size here, because it will be done on the next resize
+        // or configure event.
+    }
+
+    /// Get the resize increments of the window.
+    pub fn resize_increments(&self) -> Option<LogicalSize<u32>> {
+        self.resize_increments
+    }
+
     fn apply_custom_cursor(&self, cursor: &CustomCursor) {
-        self.apply_on_pointer(|pointer, _| {
+        self.apply_on_pointer(|pointer, data| {
             let surface = pointer.surface();
 
-            let scale = surface.data::<SurfaceData>().unwrap().surface_data().scale_factor();
+            let scale = if let Some(viewport) = data.viewport() {
+                let scale = self.scale_factor();
+                let size = PhysicalSize::new(cursor.w, cursor.h).to_logical(scale);
+                viewport.set_destination(size.width, size.height);
+                scale
+            } else {
+                let scale = surface.data::<SurfaceData>().unwrap().surface_data().scale_factor();
+                surface.set_buffer_scale(scale);
+                scale as f64
+            };
 
-            surface.set_buffer_scale(scale);
             surface.attach(Some(cursor.buffer.wl_buffer()), 0, 0);
             if surface.version() >= 4 {
                 surface.damage_buffer(0, 0, cursor.w, cursor.h);
             } else {
-                surface.damage(0, 0, cursor.w / scale, cursor.h / scale);
+                let size = PhysicalSize::new(cursor.w, cursor.h).to_logical(scale);
+                surface.damage(0, 0, size.width, size.height);
             }
             surface.commit();
 
@@ -561,12 +620,9 @@ impl WindowState {
                 .and_then(|data| data.pointer_data().latest_enter_serial())
                 .unwrap();
 
-            pointer.pointer().set_cursor(
-                serial,
-                Some(surface),
-                cursor.hotspot_x / scale,
-                cursor.hotspot_y / scale,
-            );
+            let hotspot =
+                PhysicalPosition::new(cursor.hotspot_x, cursor.hotspot_y).to_logical(scale);
+            pointer.pointer().set_cursor(serial, Some(surface), hotspot.x, hotspot.y);
         });
     }
 
@@ -611,32 +667,49 @@ impl WindowState {
             None => return Err(ExternalError::NotSupported(NotSupportedError::new())),
         };
 
-        // Replace the current mode.
-        let old_mode = std::mem::replace(&mut self.cursor_grab_mode.current_grab_mode, mode);
-
-        match old_mode {
-            CursorGrabMode::None => (),
+        let mut unset_old = false;
+        match self.cursor_grab_mode.current_grab_mode {
+            CursorGrabMode::None => unset_old = true,
             CursorGrabMode::Confined => self.apply_on_pointer(|_, data| {
                 data.unconfine_pointer();
+                unset_old = true;
             }),
             CursorGrabMode::Locked => {
-                self.apply_on_pointer(|_, data| data.unlock_pointer());
+                self.apply_on_pointer(|_, data| {
+                    data.unlock_pointer();
+                    unset_old = true;
+                });
             },
         }
 
+        // In case we haven't unset the old mode, it means that we don't have a cursor above
+        // the window, thus just wait for it to re-appear.
+        if !unset_old {
+            return Ok(());
+        }
+
+        let mut set_mode = false;
         let surface = self.window.wl_surface();
         match mode {
             CursorGrabMode::Locked => self.apply_on_pointer(|pointer, data| {
                 let pointer = pointer.pointer();
-                data.lock_pointer(pointer_constraints, surface, pointer, &self.queue_handle)
+                data.lock_pointer(pointer_constraints, surface, pointer, &self.queue_handle);
+                set_mode = true;
             }),
             CursorGrabMode::Confined => self.apply_on_pointer(|pointer, data| {
                 let pointer = pointer.pointer();
-                data.confine_pointer(pointer_constraints, surface, pointer, &self.queue_handle)
+                data.confine_pointer(pointer_constraints, surface, pointer, &self.queue_handle);
+                set_mode = true;
             }),
             CursorGrabMode::None => {
                 // Current lock/confine was already removed.
+                set_mode = true;
             },
+        }
+
+        // Replace the current grab mode after we've ensure that it got updated.
+        if set_mode {
+            self.cursor_grab_mode.current_grab_mode = mode;
         }
 
         Ok(())

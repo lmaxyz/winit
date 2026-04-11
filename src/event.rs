@@ -621,7 +621,7 @@ pub struct KeyEvent {
     ///
     /// # Example
     ///
-    /// In games, you often want to ignore repated key events - this can be
+    /// In games, you often want to ignore repeated key events - this can be
     /// done by ignoring events where this property is set.
     ///
     /// ```
@@ -1152,7 +1152,7 @@ mod tests {
     #[test]
     fn ensure_attrs_do_not_panic() {
         foreach_event!(|event: event::Event<()>| {
-            let _ = format!("{:?}", event);
+            let _ = format!("{event:?}");
         });
         let _ = event::StartCause::Init.clone();
 

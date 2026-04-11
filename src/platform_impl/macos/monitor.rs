@@ -6,6 +6,7 @@ use std::fmt;
 use core_foundation::array::{CFArrayGetCount, CFArrayGetValueAtIndex};
 use core_foundation::base::{CFRelease, TCFType};
 use core_foundation::string::CFString;
+use core_foundation::uuid::{CFUUIDGetUUIDBytes, CFUUID};
 use core_graphics::display::{
     CGDirectDisplayID, CGDisplay, CGDisplayBounds, CGDisplayCopyDisplayMode,
 };
@@ -13,6 +14,7 @@ use objc2::rc::Retained;
 use objc2::runtime::AnyObject;
 use objc2_app_kit::NSScreen;
 use objc2_foundation::{ns_string, run_on_main, MainThreadMarker, NSNumber, NSPoint, NSRect};
+use tracing::warn;
 
 use super::ffi;
 use crate::dpi::{LogicalPosition, PhysicalPosition, PhysicalSize};
@@ -97,18 +99,71 @@ impl VideoModeHandle {
     }
 }
 
+/// `CGDirectDisplayID` is documented as:
+/// > a framebuffer, a color correction (gamma) table, and possibly an attached monitor.
+///
+/// That is, it doesn't actually represent the monitor itself. Instead, we use the UUID of the
+/// monitor, as retrieved from `CGDisplayCreateUUIDFromDisplayID` (this makes the monitor ID stable,
+/// even across reboots and video mode changes).
+///
+/// NOTE: I'd be perfectly valid to store `[u8; 16]` in here instead, we only store `CFUUID` to
+/// avoid having to re-create it when we want to fetch the display ID.
 #[derive(Clone)]
-pub struct MonitorHandle(CGDirectDisplayID);
+pub struct MonitorHandle(CFUUID);
 
-// `CGDirectDisplayID` changes on video mode change, so we cannot rely on that
-// for comparisons, but we can use `CGDisplayCreateUUIDFromDisplayID` to get an
-// unique identifier that persists even across system reboots
+// SAFETY: CFUUID is immutable.
+// FIXME(madsmtm): Upstream this into `objc2-core-foundation`.
+unsafe impl Send for MonitorHandle {}
+unsafe impl Sync for MonitorHandle {}
+
+type MonitorUuid = [u8; 16];
+
+impl MonitorHandle {
+    /// Internal comparisons of [`MonitorHandle`]s are done first requesting a UUID for the handle.
+    fn uuid(&self) -> MonitorUuid {
+        let uuid = unsafe { CFUUIDGetUUIDBytes(self.0.as_concrete_TypeRef()) };
+        MonitorUuid::from([
+            uuid.byte0,
+            uuid.byte1,
+            uuid.byte2,
+            uuid.byte3,
+            uuid.byte4,
+            uuid.byte5,
+            uuid.byte6,
+            uuid.byte7,
+            uuid.byte8,
+            uuid.byte9,
+            uuid.byte10,
+            uuid.byte11,
+            uuid.byte12,
+            uuid.byte13,
+            uuid.byte14,
+            uuid.byte15,
+        ])
+    }
+
+    fn display_id(&self) -> CGDirectDisplayID {
+        unsafe { ffi::CGDisplayGetDisplayIDFromUUID(self.0.as_concrete_TypeRef()) }
+    }
+
+    #[track_caller]
+    pub(crate) fn new(display_id: CGDirectDisplayID) -> Option<Self> {
+        // kCGNullDirectDisplay
+        if display_id == 0 {
+            // `CGDisplayCreateUUIDFromDisplayID` checks kCGNullDirectDisplay internally.
+            warn!("constructing monitor from invalid display ID 0; falling back to main monitor");
+        }
+        let ptr = unsafe { ffi::CGDisplayCreateUUIDFromDisplayID(display_id) };
+        if ptr.is_null() {
+            return None;
+        }
+        Some(Self(unsafe { CFUUID::wrap_under_create_rule(ptr) }))
+    }
+}
+
 impl PartialEq for MonitorHandle {
     fn eq(&self, other: &Self) -> bool {
-        unsafe {
-            ffi::CGDisplayCreateUUIDFromDisplayID(self.0)
-                == ffi::CGDisplayCreateUUIDFromDisplayID(other.0)
-        }
+        self.uuid() == other.uuid()
     }
 }
 
@@ -122,18 +177,13 @@ impl PartialOrd for MonitorHandle {
 
 impl Ord for MonitorHandle {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        unsafe {
-            ffi::CGDisplayCreateUUIDFromDisplayID(self.0)
-                .cmp(&ffi::CGDisplayCreateUUIDFromDisplayID(other.0))
-        }
+        self.uuid().cmp(&other.uuid())
     }
 }
 
 impl std::hash::Hash for MonitorHandle {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        unsafe {
-            ffi::CGDisplayCreateUUIDFromDisplayID(self.0).hash(state);
-        }
+        self.uuid().hash(state);
     }
 }
 
@@ -141,7 +191,8 @@ pub fn available_monitors() -> VecDeque<MonitorHandle> {
     if let Ok(displays) = CGDisplay::active_displays() {
         let mut monitors = VecDeque::with_capacity(displays.len());
         for display in displays {
-            monitors.push_back(MonitorHandle(display));
+            // Display ID just fetched from `CGGetActiveDisplayList`, should be fine to unwrap.
+            monitors.push_back(MonitorHandle::new(display).expect("invalid display ID"));
         }
         monitors
     } else {
@@ -150,7 +201,8 @@ pub fn available_monitors() -> VecDeque<MonitorHandle> {
 }
 
 pub fn primary_monitor() -> MonitorHandle {
-    MonitorHandle(CGDisplay::main().id)
+    // Display ID just fetched from `CGMainDisplayID`, should be fine to unwrap.
+    MonitorHandle::new(CGDisplay::main().id).expect("invalid display ID")
 }
 
 impl fmt::Debug for MonitorHandle {
@@ -167,26 +219,20 @@ impl fmt::Debug for MonitorHandle {
 }
 
 impl MonitorHandle {
-    pub fn new(id: CGDirectDisplayID) -> Self {
-        MonitorHandle(id)
-    }
-
     // TODO: Be smarter about this:
     // <https://github.com/glfw/glfw/blob/57cbded0760a50b9039ee0cb3f3c14f60145567c/src/cocoa_monitor.m#L44-L126>
     pub fn name(&self) -> Option<String> {
-        let MonitorHandle(display_id) = *self;
-        let screen_num = CGDisplay::new(display_id).model_number();
+        let screen_num = CGDisplay::new(self.display_id()).model_number();
         Some(format!("Monitor #{screen_num}"))
     }
 
     #[inline]
     pub fn native_identifier(&self) -> u32 {
-        self.0
+        self.display_id()
     }
 
     pub fn size(&self) -> PhysicalSize<u32> {
-        let MonitorHandle(display_id) = *self;
-        let display = CGDisplay::new(display_id);
+        let display = CGDisplay::new(self.display_id());
         let height = display.pixels_high();
         let width = display.pixels_wide();
         PhysicalSize::from_logical::<_, f64>((width as f64, height as f64), self.scale_factor())
@@ -213,14 +259,15 @@ impl MonitorHandle {
 
     pub fn refresh_rate_millihertz(&self) -> Option<u32> {
         unsafe {
-            let current_display_mode = NativeDisplayMode(CGDisplayCopyDisplayMode(self.0) as _);
+            let current_display_mode =
+                NativeDisplayMode(CGDisplayCopyDisplayMode(self.display_id()) as _);
             let refresh_rate = ffi::CGDisplayModeGetRefreshRate(current_display_mode.0);
             if refresh_rate > 0.0 {
                 return Some((refresh_rate * 1000.0).round() as u32);
             }
 
             let mut display_link = std::ptr::null_mut();
-            if ffi::CVDisplayLinkCreateWithCGDisplay(self.0, &mut display_link)
+            if ffi::CVDisplayLinkCreateWithCGDisplay(self.display_id(), &mut display_link)
                 != ffi::kCVReturnSuccess
             {
                 return None;
@@ -243,27 +290,34 @@ impl MonitorHandle {
 
         unsafe {
             let modes = {
-                let array = ffi::CGDisplayCopyAllDisplayModes(self.0, std::ptr::null());
-                assert!(!array.is_null(), "failed to get list of display modes");
-                let array_count = CFArrayGetCount(array);
-                let modes: Vec<_> = (0..array_count)
-                    .map(move |i| {
-                        let mode = CFArrayGetValueAtIndex(array, i) as *mut _;
-                        ffi::CGDisplayModeRetain(mode);
-                        mode
-                    })
-                    .collect();
-                CFRelease(array as *const _);
-                modes
+                let array = ffi::CGDisplayCopyAllDisplayModes(self.display_id(), std::ptr::null());
+                if array.is_null() {
+                    // Occasionally, certain CalDigit Thunderbolt Hubs report a spurious monitor
+                    // during sleep/wake/cycling monitors. It tends to have null
+                    // or 1 video mode only. See <https://github.com/bevyengine/bevy/issues/17827>.
+                    warn!(monitor = ?self, "failed to get a list of display modes");
+                    Vec::new()
+                } else {
+                    let array_count = CFArrayGetCount(array);
+                    let modes: Vec<_> = (0..array_count)
+                        .map(move |i| {
+                            let mode = CFArrayGetValueAtIndex(array, i) as *mut _;
+                            ffi::CGDisplayModeRetain(mode);
+                            mode
+                        })
+                        .collect();
+                    CFRelease(array as *const _);
+                    modes
+                }
             };
 
             modes.into_iter().map(move |mode| {
-                let cg_refresh_rate_hertz = ffi::CGDisplayModeGetRefreshRate(mode).round() as i64;
+                let cg_refresh_rate_hertz = ffi::CGDisplayModeGetRefreshRate(mode);
 
                 // CGDisplayModeGetRefreshRate returns 0.0 for any display that
                 // isn't a CRT
-                let refresh_rate_millihertz = if cg_refresh_rate_hertz > 0 {
-                    (cg_refresh_rate_hertz * 1000) as u32
+                let refresh_rate_millihertz = if cg_refresh_rate_hertz > 0.0 {
+                    (cg_refresh_rate_hertz * 1000.0).round() as u32
                 } else {
                     refresh_rate_millihertz
                 };
@@ -296,13 +350,17 @@ impl MonitorHandle {
     }
 
     pub(crate) fn ns_screen(&self, mtm: MainThreadMarker) -> Option<Retained<NSScreen>> {
-        let uuid = unsafe { ffi::CGDisplayCreateUUIDFromDisplayID(self.0) };
+        let uuid = self.uuid();
         NSScreen::screens(mtm).into_iter().find(|screen| {
             let other_native_id = get_display_id(screen);
-            let other_uuid = unsafe {
-                ffi::CGDisplayCreateUUIDFromDisplayID(other_native_id as CGDirectDisplayID)
-            };
-            uuid == other_uuid
+            if let Some(other) = MonitorHandle::new(other_native_id) {
+                uuid == other.uuid()
+            } else {
+                // Display ID was just fetched from live NSScreen, but can still result in `None`
+                // with certain Thunderbolt docked monitors.
+                warn!(other_native_id, "comparing against screen with invalid display ID");
+                false
+            }
         })
     }
 }

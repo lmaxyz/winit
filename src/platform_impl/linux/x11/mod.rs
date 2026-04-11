@@ -497,6 +497,7 @@ impl<T: 'static> EventLoop<T> {
         // If we don't have any pending `_receiver`
         if !self.has_pending()
             && !matches!(&cause, StartCause::ResumeTimeReached { .. } | StartCause::Poll)
+            && timeout.is_none()
         {
             return;
         }
@@ -531,7 +532,7 @@ impl<T: 'static> EventLoop<T> {
                         window_id: crate::window::WindowId(window_id),
                         event: WindowEvent::ActivationTokenDone {
                             serial,
-                            token: crate::window::ActivationToken::_new(token),
+                            token: crate::window::ActivationToken::from_raw(token),
                         },
                     };
                     callback(event, &self.event_processor.target)
@@ -751,14 +752,14 @@ impl<'a> DeviceInfo<'a> {
     }
 }
 
-impl<'a> Drop for DeviceInfo<'a> {
+impl Drop for DeviceInfo<'_> {
     fn drop(&mut self) {
         assert!(!self.info.is_null());
         unsafe { (self.xconn.xinput2.XIFreeDeviceInfo)(self.info as *mut _) };
     }
 }
 
-impl<'a> Deref for DeviceInfo<'a> {
+impl Deref for DeviceInfo<'_> {
     type Target = [ffi::XIDeviceInfo];
 
     fn deref(&self) -> &Self::Target {
@@ -849,24 +850,24 @@ pub enum X11Error {
 impl fmt::Display for X11Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            X11Error::Xlib(e) => write!(f, "Xlib error: {}", e),
-            X11Error::Connect(e) => write!(f, "X11 connection error: {}", e),
-            X11Error::Connection(e) => write!(f, "X11 connection error: {}", e),
-            X11Error::XidsExhausted(e) => write!(f, "XID range exhausted: {}", e),
-            X11Error::GetProperty(e) => write!(f, "Failed to get X property {}", e),
-            X11Error::X11(e) => write!(f, "X11 error: {:?}", e),
-            X11Error::UnexpectedNull(s) => write!(f, "Xlib function returned null: {}", s),
+            X11Error::Xlib(e) => write!(f, "Xlib error: {e}"),
+            X11Error::Connect(e) => write!(f, "X11 connection error: {e}"),
+            X11Error::Connection(e) => write!(f, "X11 connection error: {e}"),
+            X11Error::XidsExhausted(e) => write!(f, "XID range exhausted: {e}"),
+            X11Error::GetProperty(e) => write!(f, "Failed to get X property {e}"),
+            X11Error::X11(e) => write!(f, "X11 error: {e:?}"),
+            X11Error::UnexpectedNull(s) => write!(f, "Xlib function returned null: {s}"),
             X11Error::InvalidActivationToken(s) => write!(
                 f,
                 "Invalid activation token: {}",
                 std::str::from_utf8(s).unwrap_or("<invalid utf8>")
             ),
-            X11Error::MissingExtension(s) => write!(f, "Missing X11 extension: {}", s),
+            X11Error::MissingExtension(s) => write!(f, "Missing X11 extension: {s}"),
             X11Error::NoSuchVisual(visualid) => {
-                write!(f, "Could not find a matching X11 visual for ID `{:x}`", visualid)
+                write!(f, "Could not find a matching X11 visual for ID `{visualid:x}`")
             },
             X11Error::XsettingsParse(err) => {
-                write!(f, "Failed to parse xsettings: {:?}", err)
+                write!(f, "Failed to parse xsettings: {err:?}")
             },
         }
     }
@@ -957,7 +958,7 @@ trait CookieResultExt {
     fn expect_then_ignore_error(self, msg: &str);
 }
 
-impl<'a, E: fmt::Debug> CookieResultExt for Result<VoidCookie<'a>, E> {
+impl<E: fmt::Debug> CookieResultExt for Result<VoidCookie<'_>, E> {
     fn expect_then_ignore_error(self, msg: &str) {
         self.expect(msg).ignore_error()
     }

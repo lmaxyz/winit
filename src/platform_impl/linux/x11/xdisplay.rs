@@ -145,7 +145,7 @@ impl XConnection {
     fn new_xsettings_screen(xcb: &XCBConnection, default_screen: usize) -> Option<xproto::Atom> {
         // Fetch the _XSETTINGS_S[screen number] atom.
         let xsettings_screen = xcb
-            .intern_atom(false, format!("_XSETTINGS_S{}", default_screen).as_bytes())
+            .intern_atom(false, format!("_XSETTINGS_S{default_screen}").as_bytes())
             .ok()?
             .reply()
             .ok()?
@@ -234,9 +234,7 @@ impl XConnection {
         // Store the timestamp in the slot if it's greater than the last one.
         let mut last_timestamp = self.timestamp.load(Ordering::Relaxed);
         loop {
-            let wrapping_sub = |a: xproto::Timestamp, b: xproto::Timestamp| (a as i32) - (b as i32);
-
-            if wrapping_sub(timestamp, last_timestamp) <= 0 {
+            if (timestamp as i32).wrapping_sub(last_timestamp as i32) <= 0 {
                 break;
             }
 

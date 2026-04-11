@@ -7,7 +7,12 @@
 //!
 //! ```no_run
 //! use winit::event_loop::EventLoop;
-//! let event_loop = EventLoop::new().unwrap();
+//!
+//! # // Intentionally use `fn main` for clarity
+//! fn main() {
+//!     let event_loop = EventLoop::new().unwrap();
+//!     // ...
+//! }
 //! ```
 //!
 //! Then you create a [`Window`] with [`create_window`].
@@ -84,19 +89,22 @@
 //!     }
 //! }
 //!
-//! let event_loop = EventLoop::new().unwrap();
+//! # // Intentionally use `fn main` for clarity
+//! fn main() {
+//!     let event_loop = EventLoop::new().unwrap();
 //!
-//! // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
-//! // dispatched any events. This is ideal for games and similar applications.
-//! event_loop.set_control_flow(ControlFlow::Poll);
+//!     // ControlFlow::Poll continuously runs the event loop, even if the OS hasn't
+//!     // dispatched any events. This is ideal for games and similar applications.
+//!     event_loop.set_control_flow(ControlFlow::Poll);
 //!
-//! // ControlFlow::Wait pauses the event loop if no events are available to process.
-//! // This is ideal for non-game applications that only update in response to user
-//! // input, and uses significantly less power/CPU time than ControlFlow::Poll.
-//! event_loop.set_control_flow(ControlFlow::Wait);
+//!     // ControlFlow::Wait pauses the event loop if no events are available to process.
+//!     // This is ideal for non-game applications that only update in response to user
+//!     // input, and uses significantly less power/CPU time than ControlFlow::Poll.
+//!     event_loop.set_control_flow(ControlFlow::Wait);
 //!
-//! let mut app = App::default();
-//! event_loop.run_app(&mut app);
+//!     let mut app = App::default();
+//!     event_loop.run_app(&mut app);
+//! }
 //! ```
 //!
 //! [`WindowEvent`] has a [`WindowId`] member. In multi-window environments, it should be
@@ -157,7 +165,6 @@
 //! [`Window`]: window::Window
 //! [`WindowId`]: window::WindowId
 //! [`WindowAttributes`]: window::WindowAttributes
-//! [window_new]: window::Window::new
 //! [`create_window`]: event_loop::ActiveEventLoop::create_window
 //! [`Window::id()`]: window::Window::id
 //! [`WindowEvent`]: event::WindowEvent
@@ -175,8 +182,11 @@
 #![cfg_attr(clippy, deny(warnings))]
 // Doc feature labels can be tested locally by running RUSTDOCFLAGS="--cfg=docsrs" cargo +nightly
 // doc
-#![cfg_attr(docsrs, feature(doc_auto_cfg, doc_cfg_hide), doc(cfg_hide(doc, docsrs)))]
+#![cfg_attr(docsrs, feature(doc_cfg), doc(auto_cfg(hide(doc, docsrs))))]
 #![allow(clippy::missing_safety_doc)]
+#![warn(clippy::uninlined_format_args)]
+// TODO: wasm-binding needs to be updated for that to be resolved, for now just silence it.
+#![cfg_attr(web_platform, allow(unknown_lints, renamed_and_removed_lints, wasm_c_abi))]
 
 #[cfg(feature = "rwh_04")]
 pub use rwh_04 as raw_window_handle_04;
