@@ -40,7 +40,7 @@ use sink::EventSink;
 
 use super::state::{WindowCompositorUpdate, WinitState};
 use super::window::state::FrameCallbackState;
-use super::{logical_to_physical_rounded, DeviceId, WaylandError, WindowId};
+use super::{convert_transform, logical_to_physical_rounded, DeviceId, WaylandError, WindowId};
 
 type WaylandDispatcher = calloop::Dispatcher<'static, WaylandSource<WinitState>, WinitState>;
 
@@ -404,6 +404,22 @@ impl<T: 'static> EventLoop<T> {
                     // Make it queue resize.
                     compositor_update.resized = true;
                 }
+            }
+
+            if compositor_update.transform_changed {
+                let transform = self.with_state(|state| {
+                    let windows = state.windows.get_mut();
+                    let window = windows.get(&window_id).unwrap().lock().unwrap();
+                    convert_transform(window.transform())
+                });
+
+                callback(
+                    Event::WindowEvent {
+                        window_id: crate::window::WindowId(window_id),
+                        event: WindowEvent::WindowTransformed(transform),
+                    },
+                    &self.window_target,
+                );
             }
 
             // NOTE: Rescale changed the physical size which winit operates in, thus we should

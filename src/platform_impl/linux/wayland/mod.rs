@@ -84,3 +84,23 @@ fn logical_to_physical_rounded(size: LogicalSize<u32>, scale_factor: f64) -> Phy
     let height = size.height as f64 * scale_factor;
     (width.round(), height.round()).into()
 }
+
+/// Convert Wayland's `wl_output::Transform` to winit's [`Transform`].
+#[inline]
+fn convert_transform(
+    transform: wayland_client::protocol::wl_output::Transform,
+) -> crate::event::Transform {
+    use crate::event::Transform;
+    use wayland_client::protocol::wl_output::Transform as WlTransform;
+    match transform {
+        WlTransform::Normal => Transform::Normal,
+        WlTransform::_90 => Transform::_90,
+        WlTransform::_180 => Transform::_180,
+        WlTransform::_270 => Transform::_270,
+        WlTransform::Flipped => Transform::Flipped,
+        WlTransform::Flipped90 => Transform::Flipped90,
+        WlTransform::Flipped180 => Transform::Flipped180,
+        WlTransform::Flipped270 => Transform::Flipped270,
+        _ => Transform::Normal,
+    }
+}

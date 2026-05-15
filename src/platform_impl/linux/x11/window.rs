@@ -1603,6 +1603,12 @@ impl UnownedWindow {
         self.shared_state_lock().last_monitor.scale_factor
     }
 
+    #[inline]
+    pub fn transform(&self) -> crate::event::Transform {
+        // Not supported for X11
+        crate::event::Transform::Normal
+    }
+
     pub fn set_cursor_position_physical(&self, x: i32, y: i32) -> Result<(), ExternalError> {
         {
             self.xconn

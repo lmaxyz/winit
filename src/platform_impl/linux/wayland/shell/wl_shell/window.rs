@@ -5,7 +5,7 @@ use wayland_client::{
     protocol::{
         wl_output::WlOutput,
         wl_seat::WlSeat,
-        wl_shell_surface::{Resize, WlShellSurface},
+        wl_shell_surface::{Resize, Transient, WlShellSurface},
         wl_surface::WlSurface,
     },
     Connection, QueueHandle,
@@ -68,6 +68,10 @@ impl Window {
 
     pub fn set_top_level(&self) {
         self.0.wl_shell_surface.set_toplevel()
+    }
+
+    pub fn set_transient(&self, parent: &WlSurface) {
+        self.0.wl_shell_surface.set_transient(parent, 0, 0, Transient::Inactive)
     }
 
     pub fn set_fullscreen(&self, output: Option<&WlOutput>) {

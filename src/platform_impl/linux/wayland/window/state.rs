@@ -842,6 +842,11 @@ impl WindowState {
         }
     }
 
+    #[inline]
+    pub fn transform(&self) -> Transform {
+        self.transform
+    }
+
     pub fn set_transform(&mut self, transform: Transform) {
         self.transform = transform;
         if let Some(extended_surface) = self.extended_surface.as_ref() {

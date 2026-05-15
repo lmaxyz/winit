@@ -147,6 +147,39 @@ pub enum StartCause {
     Init,
 }
 
+/// Represents the orientation of an output surface.
+///
+/// This is used by the [`WindowTransformed`] event to indicate how the window's
+/// content should be transformed to match the display orientation.
+///
+/// [`WindowTransformed`]: WindowEvent::WindowTransformed
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transform {
+    /// No transformation.
+    Normal,
+
+    /// Rotated 90 degrees clockwise.
+    _90,
+
+    /// Rotated 180 degrees clockwise.
+    _180,
+
+    /// Rotated 270 degrees clockwise.
+    _270,
+
+    /// Flipped horizontally (mirrored).
+    Flipped,
+
+    /// Flipped horizontally and rotated 90 degrees clockwise.
+    Flipped90,
+
+    /// Flipped horizontally and rotated 180 degrees clockwise.
+    Flipped180,
+
+    /// Flipped horizontally and rotated 270 degrees clockwise.
+    Flipped270,
+}
+
 /// Describes an event from a [`Window`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum WindowEvent {
@@ -383,6 +416,18 @@ pub enum WindowEvent {
         /// See [`InnerSizeWriter`] docs for more details.
         inner_size_writer: InnerSizeWriter,
     },
+
+    /// The window's display transform has changed.
+    ///
+    /// This event is emitted when the compositor notifies the window that the output
+    /// transform has changed. Applications should use this to rotate their content
+    /// accordingly.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **Wayland:** Supported.
+    /// - **Others:** Unsupported.
+    WindowTransformed(Transform),
 
     /// The system window theme has changed.
     ///

@@ -458,6 +458,11 @@ impl Window {
     }
 
     #[inline]
+    pub fn transform(&self) -> crate::event::Transform {
+        x11_or_wayland!(match self; Window(w) => w.transform())
+    }
+
+    #[inline]
     pub fn set_cursor_position(&self, position: Position) -> Result<(), ExternalError> {
         x11_or_wayland!(match self; Window(w) => w.set_cursor_position(position))
     }
@@ -578,6 +583,16 @@ impl Window {
     pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
         // Uses for setting up windows on Aurora OS
         x11_or_wayland!(match self; Window(w) => w.update_generic_property(name, value))
+    }
+
+    /// Set the window as transient for the given parent window.
+    #[inline]
+    pub fn set_transient(&self, parent: &Window) {
+        match (self, parent) {
+            #[cfg(wayland_platform)]
+            (Window::Wayland(w), Window::Wayland(p)) => w.set_transient(p),
+            _ => {},
+        }
     }
 
     #[cfg(feature = "rwh_04")]

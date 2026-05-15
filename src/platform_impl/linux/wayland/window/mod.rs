@@ -393,6 +393,12 @@ impl Window {
     }
 
     #[inline]
+    pub fn transform(&self) -> crate::event::Transform {
+        use crate::platform_impl::platform::wayland::convert_transform;
+        convert_transform(self.window_state.lock().unwrap().transform())
+    }
+
+    #[inline]
     pub fn set_blur(&self, _blur: bool) {
         // self.window_state.lock().unwrap().set_blur(blur);
     }
@@ -601,6 +607,13 @@ impl Window {
 
     pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
         self.window_state.lock().unwrap().update_generic_property(name, value);
+    }
+
+    /// Set the window as transient for the given parent window.
+    #[inline]
+    pub fn set_transient(&self, parent: &Window) {
+        let parent_surface = parent.window.wl_surface();
+        self.window.set_transient(parent_surface);
     }
 
     #[cfg(feature = "rwh_04")]

@@ -566,6 +566,22 @@ impl Window {
         self.window.maybe_wait_on_main(|w| w.scale_factor())
     }
 
+    /// Returns the current display transform for the window.
+    ///
+    /// This indicates how the window's content should be oriented to match
+    /// the display. The value can be used to rotate content appropriately.
+    ///
+    /// ## Platform-specific
+    ///
+    /// - **Wayland:** Supported.
+    /// - **Others:** Returns [`Transform::Normal`].
+    #[inline]
+    pub fn transform(&self) -> crate::event::Transform {
+        let _span = tracing::debug_span!("winit::Window::transform",).entered();
+
+        self.window.maybe_wait_on_main(|w| w.transform())
+    }
+
     /// Queues a [`WindowEvent::RedrawRequested`] event to be emitted that aligns with the windowing
     /// system drawing loop.
     ///
@@ -1626,6 +1642,14 @@ impl Window {
     // Setups window property via qt_extended_surface interface.
     pub fn update_generic_property(&self, name: &str, value: Vec<u8>) {
         self.window.maybe_wait_on_main(|w| w.update_generic_property(name, value))
+    }
+
+    /// Set the window as transient for the given parent window.
+    ///
+    /// This is used on Aurora OS to create child / popup windows
+    /// that are transient for a parent window.
+    pub fn set_transient(&self, parent: &Window) {
+        self.window.maybe_wait_on_main(|w| w.set_transient(&parent.window))
     }
 }
 
