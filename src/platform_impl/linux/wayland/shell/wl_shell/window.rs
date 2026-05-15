@@ -70,8 +70,8 @@ impl Window {
         self.0.wl_shell_surface.set_toplevel()
     }
 
-    pub fn set_transient(&self, parent: &WlSurface) {
-        self.0.wl_shell_surface.set_transient(parent, 0, 0, Transient::Inactive)
+    pub fn set_transient(&self, _parent: &WlSurface) {
+        self.0.wl_shell_surface.set_transient(self.wl_surface(), 0, 0, Transient::Inactive)
     }
 
     pub fn set_fullscreen(&self, output: Option<&WlOutput>) {
