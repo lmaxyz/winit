@@ -477,7 +477,7 @@ impl ApplicationHandler<UserEvent> for Application {
             | WindowEvent::Destroyed
             | WindowEvent::Touch(_)
             | WindowEvent::Moved(_)
-            | WindowEvent::WindowTransformed(_) => (),
+            | WindowEvent::Transformed(_) => (),
         }
     }
 

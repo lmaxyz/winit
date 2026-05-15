@@ -149,10 +149,10 @@ pub enum StartCause {
 
 /// Represents the orientation of an output surface.
 ///
-/// This is used by the [`WindowTransformed`] event to indicate how the window's
+/// This is used by the [`Transformed`] event to indicate how the window's
 /// content should be transformed to match the display orientation.
 ///
-/// [`WindowTransformed`]: WindowEvent::WindowTransformed
+/// [`Transformed`]: WindowEvent::Transformed
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Transform {
     /// No transformation.
@@ -427,7 +427,7 @@ pub enum WindowEvent {
     ///
     /// - **Wayland:** Supported.
     /// - **Others:** Unsupported.
-    WindowTransformed(Transform),
+    Transformed(Transform),
 
     /// The system window theme has changed.
     ///

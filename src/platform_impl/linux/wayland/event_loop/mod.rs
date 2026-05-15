@@ -416,7 +416,7 @@ impl<T: 'static> EventLoop<T> {
                 callback(
                     Event::WindowEvent {
                         window_id: crate::window::WindowId(window_id),
-                        event: WindowEvent::WindowTransformed(transform),
+                        event: WindowEvent::Transformed(transform),
                     },
                     &self.window_target,
                 );
