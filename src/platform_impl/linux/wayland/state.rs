@@ -366,8 +366,6 @@ impl OutputHandler for WinitState {
         let updated_size = updated.size();
 
         let mut monitors = self.monitors.lock().unwrap();
-        let old_transform = monitors.iter().find(|m| **m == updated).map(|m| m.transform());
-        let transform_changed = old_transform.map_or(true, |old| old != new_transform);
 
         if let Some(pos) = monitors.iter().position(|output| *output == updated) {
             monitors[pos] = updated;
@@ -377,26 +375,24 @@ impl OutputHandler for WinitState {
 
         drop(monitors);
 
-        if transform_changed {
-            for (window_id, window) in self.windows.get_mut().iter() {
-                let mut window_state = window.lock().unwrap();
-                window_state.set_transform(new_transform);
-                let _ = window_state.window.set_buffer_transform(new_transform);
-                window_state.window.commit();
+        for (window_id, window) in self.windows.get_mut().iter() {
+            let mut window_state = window.lock().unwrap();
+            window_state.set_transform(new_transform);
+            let _ = window_state.window.set_buffer_transform(new_transform);
+            window_state.window.commit();
 
-                // Queue compositor update for transform changed event.
-                let pos = if let Some(pos) = self
-                    .window_compositor_updates
-                    .iter()
-                    .position(|update| update.window_id == *window_id)
-                {
-                    pos
-                } else {
-                    self.window_compositor_updates.push(WindowCompositorUpdate::new(*window_id));
-                    self.window_compositor_updates.len() - 1
-                };
-                self.window_compositor_updates[pos].transform_changed = true;
-            }
+            // Queue compositor update for transform changed event.
+            let pos = if let Some(pos) = self
+                .window_compositor_updates
+                .iter()
+                .position(|update| update.window_id == *window_id)
+            {
+                pos
+            } else {
+                self.window_compositor_updates.push(WindowCompositorUpdate::new(*window_id));
+                self.window_compositor_updates.len() - 1
+            };
+            self.window_compositor_updates[pos].transform_changed = true;
         }
 
         debug!("Updated output: {:?} {:?} {:?}\n", updated_position, new_transform, updated_size);
