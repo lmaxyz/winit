@@ -361,31 +361,45 @@ impl OutputHandler for WinitState {
 
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, updated: WlOutput) {
         let updated = MonitorHandle::new(updated);
+        let new_transform = updated.transform();
+        let updated_position = updated.position();
+        let updated_size = updated.size();
 
-        {
-            let mut window_state = self.windows.get_mut().iter().next().unwrap().1.lock().unwrap();
-            window_state.set_transform(updated.transform());
-            if window_state.window.set_buffer_transform(updated.transform()).is_ok() {
+        let mut monitors = self.monitors.lock().unwrap();
+        let old_transform = monitors.iter().find(|m| **m == updated).map(|m| m.transform());
+        let transform_changed = old_transform.map_or(true, |old| old != new_transform);
+
+        if let Some(pos) = monitors.iter().position(|output| *output == updated) {
+            monitors[pos] = updated;
+        } else {
+            monitors.push(updated);
+        }
+
+        drop(monitors);
+
+        if transform_changed {
+            for (window_id, window) in self.windows.get_mut().iter() {
+                let mut window_state = window.lock().unwrap();
+                window_state.set_transform(new_transform);
+                let _ = window_state.window.set_buffer_transform(new_transform);
                 window_state.window.commit();
-            } else {
-                // Handle error case
-                // Add logging
+
+                // Queue compositor update for transform changed event.
+                let pos = if let Some(pos) = self
+                    .window_compositor_updates
+                    .iter()
+                    .position(|update| update.window_id == *window_id)
+                {
+                    pos
+                } else {
+                    self.window_compositor_updates.push(WindowCompositorUpdate::new(*window_id));
+                    self.window_compositor_updates.len() - 1
+                };
+                self.window_compositor_updates[pos].transform_changed = true;
             }
         }
 
-        debug!(
-            "Updated output: {:?} {:?} {:?}\n",
-            updated.position(),
-            updated.transform(),
-            updated.size()
-        );
-
-        let mut monitors = self.monitors.lock().unwrap();
-        if let Some(pos) = monitors.iter().position(|output| output == &updated) {
-            monitors[pos] = updated
-        } else {
-            monitors.push(updated)
-        }
+        debug!("Updated output: {:?} {:?} {:?}\n", updated_position, new_transform, updated_size);
     }
 
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, removed: WlOutput) {
@@ -402,10 +416,11 @@ impl CompositorHandler for WinitState {
         &mut self,
         _: &Connection,
         _: &QueueHandle<Self>,
-        surface: &WlSurface,
-        transform: wayland_client::protocol::wl_output::Transform,
+        _surface: &WlSurface,
+        _transform: wayland_client::protocol::wl_output::Transform,
     ) {
-        self.transform_changed(surface, transform);
+        // NOTE: On Aurora OS, transform changes come via OutputHandler::update_output,
+        // not CompositorHandler::transform_changed.
     }
 
     fn surface_enter(
