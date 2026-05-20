@@ -81,6 +81,7 @@ impl<T> EventLoopBuilderExtWayland for EventLoopBuilder<T> {
 pub trait WindowExtWayland {
     /// Returns `xdg_toplevel` of the window or [`None`] if the window is X11 window.
     fn xdg_toplevel(&self) -> Option<NonNull<c_void>>;
+    fn wl_surface_id(&self) -> Option<u32>;
 }
 
 impl WindowExtWayland for Window {
@@ -92,6 +93,17 @@ impl WindowExtWayland for Window {
             crate::platform_impl::Window::X(_) => None,
             #[cfg(wayland_platform)]
             crate::platform_impl::Window::Wayland(window) => window.xdg_toplevel(),
+        }
+    }
+
+    #[inline]
+    fn wl_surface_id(&self) -> Option<u32> {
+        #[allow(clippy::single_match)]
+        match &self.window {
+            #[cfg(x11_platform)]
+            crate::platform_impl::Window::X(_) => None,
+            #[cfg(wayland_platform)]
+            crate::platform_impl::Window::Wayland(window) => Some(window.wl_surface_id()),
         }
     }
 }

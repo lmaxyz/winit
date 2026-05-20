@@ -220,6 +220,12 @@ impl Window {
         self.window_id
     }
 
+    /// Return the Wayland object ID of the underlying `wl_surface`.
+    #[inline]
+    pub(crate) fn wl_surface_id(&self) -> u32 {
+        self.window.wl_surface().id().protocol_id()
+    }
+
     #[inline]
     pub fn set_title(&self, title: impl ToString) {
         let new_title = title.to_string();
